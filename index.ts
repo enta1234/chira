@@ -56,18 +56,18 @@ interface Stream {
 }
 
 class Chira { // Enhanced class name for clarity
-  private isLoggingInitialized = false; // Clearer boolean name
-  private config: IConfig = CONFIG;
-  private sessionIdProvider: ((req: any, res: any) => string | undefined) | undefined; // Enhanced type for clarity
+  private isLoggingInitialized = false // Clearer boolean name
+  private config: IConfig = CONFIG
+  private sessionIdProvider: ((req: any, res: any) => string | undefined) | undefined // Enhanced type for clarity
   private streamTasks: {
-  app: Stream[]
-  smr: Stream[]
-  dtl: Stream[]
-} = {
-  app: [],
-  smr: [],
-  dtl: [],
-};
+    app: Stream[]
+    smr: Stream[]
+    dtl: Stream[]
+  } = {
+    app: [],
+    smr: [],
+    dtl: [],
+  }
 
   constructor(private express?: any) {} // Optional dependency injection
 
@@ -105,8 +105,99 @@ class Chira { // Enhanced class name for clarity
         const sid = this.sessionIdProvider?.(req, res); // Optional chaining for session ID
         const message = this.formatRequestMessage(req, res)
         this.debug(sid, message)
-      });
+
+        onHeaders(res, () => {
+          res._processAPP = Date.now() - req._reqTimeForLog
+        });
+
+        onFinished(res, () => {
+          // Construct response log message
+          const responseLogMessage = this.formatResponseMessage(res, this.config.log.format)
+  
+          // Log response with session ID if available
+          if (sid) {
+            this.debug(sid, responseLogMessage)
+          } else {
+            this.debug(responseLogMessage)
+          }
+        })
+
+        next()
+      })
+
+      if (this.config.log.autoAddResBody) {
+        this.express.use(this.logResponseBody)
+      }
     }
+  }
+
+  private logResponseBody(req: any, res: any, next: any) {
+    const oldWrite = res.write.bind(res); // Preserve `this` context for `oldWrite`
+    const oldEnd = res.end.bind(res); // Preserve `this` context for `oldEnd`
+  
+    const chunks: Buffer[] = []; // Type annotation for clarity
+  
+    res.write = (chunk: any) => {
+      chunks.push(Buffer.from(chunk));
+      oldWrite(chunk);
+    };
+  
+    res.end = (chunk?: any) => {
+      if (chunk) {
+        chunks.push(Buffer.from(chunk));
+      }
+  
+      const contentType = this.checkCType(res.getHeaders()['content-type'])
+      try {
+        if (contentType === 'json') {
+          res.body = chunks.length > 0
+            ? JSON.parse(Buffer.concat(chunks).toString('utf8'))
+            : ''
+        } else {
+          res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
+        }
+      } catch (error) {
+        console.error('Error parsing response body:', error)
+      }
+  
+      oldEnd(chunk);
+    }
+  
+    next()
+  }
+
+  private checkCType (cType: string) {
+    if (cType) {
+      if (cType.includes(';')) {
+        cType = cType.split(';')[0]
+      }
+      if ((cType) === 'application/json') {
+        return 'json'
+      }
+      if (cTypeTXT.includes(cType)) {
+        return 'txt'
+      }
+    }
+    return false
+  }
+
+  private formatResponseMessage(res: any, logFormat: string): string | object {
+    const statusCode = res.statusCode;
+    const headers = res.getHeaders();
+    const body = this.toStr(res.body); // Assuming `toStr` is available
+    const processAppTime = res._processAPP;
+    const responseTime = Date.now() - res._reqTimeForLog;
+  
+    return logFormat === 'pipe'
+      ? `OUTGOING|__STATUSCODE=${statusCode} __HEADERS=${JSON.stringify(headers)} __BODY=${body} __PROCESSAPP=${processAppTime} __RESTIME=${responseTime}`
+      : {
+          Type: 'OUTGOING',
+          StatusCode: statusCode,
+          Headers: headers,
+          Body: body,
+          ProcessApp: processAppTime,
+          ResTime: responseTime,
+        };
   }
 
   private log(level: keyof typeof loggingLevels, ...args: any[]) {
@@ -140,7 +231,7 @@ class Chira { // Enhanced class name for clarity
 
   private write(type: ILogType, txt: string) {
     try {
-      const streams = this.streamTasks[type];
+      const streams = this.streamTasks[type]
       if (streams) {
         for (const stream of streams) {
           try {
@@ -166,8 +257,8 @@ class Chira { // Enhanced class name for clarity
   }
 
   private formatLogText(_txt: any[]): string {
-    const rtxt = _txt.map(this.toStr).join(' ') // Concisely join text parts
-    return rtxt
+    const rTxt = _txt.map(this.toStr).join(' ') // Concisely join text parts
+    return rTxt
   }
 
   private formatPipeLog(lvlAppLog: string, session: string, txt: string): string {
