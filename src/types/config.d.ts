@@ -10,7 +10,7 @@ export type IConfig = {
   } & ILog
 }
 
-type ILog = {
+export type ILog = {
   time: number
   size: number | null
   path: string

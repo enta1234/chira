@@ -1,43 +1,19 @@
-import fs from 'fs'
-import os from 'os'
-const endOfLine = os.EOL
+import fs from 'fs';
+import os from 'os';
+import rfs from 'rotating-file-stream';
+import mkdirp from 'mkdirp';
+import onHeaders from 'on-headers';
+import onFinished from 'on-finished';
+import dateFormat from 'dateformat';
+import cron from 'node-cron';
 
-import rfs from 'rotating-file-stream'
-import onHeaders from 'on-headers'
-import onFinished from 'on-finished'
-import cron from 'node-cron'
+const endOfLine: string = os.EOL;
 
-// DATE FORMAT
-import dateFormat from 'dateformat'
-import { IConfig } from './src/types/config'
-import { CONFIG } from './src/configs/configs'
-const dateFMT = 'yyyymmdd HH:MM:ss.l'
-const dateFMTSQL = 'yyyy-mm-dd HH:MM:ss.l'
-const fileFMT = 'yyyymmddHHMMss'
+const dateFMT: string = 'yyyymmdd HH:MM:ss.l';
+const dateFMTSQL: string = 'yyyy-mm-dd HH:MM:ss.l';
+const fileFMT: string = 'yyyymmddHHMMss';
 
-process.env.pm_id = process.env.pm_id || '0'
-// let statNew
-// let logStream
-
-const loggingLevels = {
-  debug: 0,
-  info: 1,
-  warn: 2,
-  error: 3,
-}
-
-interface LogMessage {
-  LogType: string;
-  Host: string;
-  AppName: string;
-  Instance: string;
-  InputTimeStamp: string;
-  Level: string;
-  Session: string;
-  Message: string;
-}
-
-const cTypeTXT = [
+const cTypeTXT: string[] = [
   'text/plain',
   'application/json',
   'text/xml',
@@ -45,270 +21,316 @@ const cTypeTXT = [
   'application/xml',
   'application/javascript',
   'text/css',
-  'text/csv'
-]
+  'text/csv',
+];
 
-type ILogType = 'app'| 'smr' | 'dtl'
-
-interface Stream {
-  write?: (text: string) => void
-  log?: (text: string) => void
+interface LogConfiguration {
+  time: number | null;
+  size: number | null;
+  path: string;
+  level: 'debug' | 'info' | 'warn' | 'error';
+  console: boolean;
+  file: boolean;
+  autoAddResBody: boolean;
+  format: 'json' | 'pipe';
 }
 
-class Chira { // Enhanced class name for clarity
-  private isLoggingInitialized = false // Clearer boolean name
-  private config: IConfig = CONFIG
-  private sessionIdProvider: ((req: any, res: any) => string | undefined) | undefined // Enhanced type for clarity
-  private streamTasks: {
-    app: Stream[]
-    smr: Stream[]
-    dtl: Stream[]
-  } = {
-    app: [],
-    smr: [],
-    dtl: [],
-  }
+interface SummaryConfiguration {
+  time: number;
+  size: number | null;
+  path: string;
+  console: boolean;
+  file: boolean;
+  format: 'json' | 'pipe';
+}
 
-  constructor(private express?: any) {} // Optional dependency injection
+interface DetailConfiguration {
+  time: number;
+  size: number | null;
+  path: string;
+  console: boolean;
+  file: boolean;
+  rawData: boolean;
+}
 
-  init(_conf?: IConfig) {
-    this.isLoggingInitialized = true;
-    this.config = _conf || this.config // Concise merging of configuration
+type ConfigurationType = LogConfiguration | SummaryConfiguration | DetailConfiguration;
 
-    if (this.config.log?.level === 'debug') { // Optional chaining for safety
-      this.setupDebugLogging()
-    }
-  }
+interface Configuration {
+  projectName: string;
+  log: LogConfiguration;
+  summary: SummaryConfiguration;
+  detail: DetailConfiguration;
+}
 
-  private formatRequestMessage(req: any, res: any): string | object {
-    if (this.config.log.format === 'json') {
-      return {
-        type: 'INCOMING',
-        method: req.method.toLowerCase(),
-        url: req.url,
-        headers: req.headers,
-        body: req.body,
-      };
-    } else {
-      const txtLogReq = 'INCOMING|__METHOD=' + req.method.toLowerCase() +
-        ' __URL=' + req.url +
-        ' __HEADERS=' + JSON.stringify(req.headers) +
-        ' __BODY=' + this.toStr(req.body)
-      return txtLogReq
-    }
-  }
+let conf: Configuration = {
+  projectName: 'PROJECT_NAME',
+  log: {
+    time: null,
+    size: null,
+    path: './appLogPath/',
+    level: 'debug',
+    console: true,
+    file: true,
+    autoAddResBody: true,
+    format: 'json',
+  },
+  summary: {
+    time: 15,
+    size: null,
+    path: './summaryPath/',
+    console: false,
+    file: true,
+    format: 'json',
+  },
+  detail: {
+    time: 15,
+    size: null,
+    path: './detailPath/',
+    console: false,
+    file: true,
+    rawData: false
+  },
+};
 
-  private setupDebugLogging() {
-    if (this.express) {
-      this.express.use((req: any, res: any, next: any) => {
-        req._reqTimeForLog = Date.now();
-        const sid = this.sessionIdProvider?.(req, res); // Optional chaining for session ID
-        const message = this.formatRequestMessage(req, res)
-        this.debug(sid, message)
+interface RawMessage {
+  LogType: string;
+  Host: string;
+  AppName: string;
+  Instance: string;
+  InputTimeStamp: string | null;
+  Level: string;
+  Session?: string;
+  Message: string;
+  Stack?: string;
+}
 
-        onHeaders(res, () => {
-          res._processAPP = Date.now() - req._reqTimeForLog
-        });
+interface StreamTask {
+  app: rfs.RotatingFileStream[];
+  smr: rfs.RotatingFileStream[];
+  dtl: rfs.RotatingFileStream[];
+}
 
-        onFinished(res, () => {
-          // Construct response log message
-          const responseLogMessage = this.formatResponseMessage(res, this.config.log.format)
-  
-          // Log response with session ID if available
-          if (sid) {
-            this.debug(sid, responseLogMessage)
-          } else {
-            this.debug(responseLogMessage)
-          }
-        })
+class Log {
+  private logStream: any; // Type accordingly
+  private streamTask: StreamTask
 
-        next()
-      })
-
-      if (this.config.log.autoAddResBody) {
-        this.express.use(this.logResponseBody)
-      }
-    }
-  }
-
-  private logResponseBody(req: any, res: any, next: any) {
-    const oldWrite = res.write.bind(res); // Preserve `this` context for `oldWrite`
-    const oldEnd = res.end.bind(res); // Preserve `this` context for `oldEnd`
-  
-    const chunks: Buffer[] = []; // Type annotation for clarity
-  
-    res.write = (chunk: any) => {
-      chunks.push(Buffer.from(chunk));
-      oldWrite(chunk);
+  constructor() {
+    this.logStream = null;
+    this.streamTask = {
+      app: [],
+      smr: [],
+      dtl: [],
     };
-  
-    res.end = (chunk?: any) => {
-      if (chunk) {
-        chunks.push(Buffer.from(chunk));
-      }
-  
-      const contentType = this.checkCType(res.getHeaders()['content-type'])
-      try {
-        if (contentType === 'json') {
-          res.body = chunks.length > 0
-            ? JSON.parse(Buffer.concat(chunks).toString('utf8'))
-            : ''
-        } else {
-          res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
-        }
-      } catch (error) {
-        console.error('Error parsing response body:', error)
-      }
-  
-      oldEnd(chunk);
-    }
-  
-    next()
   }
 
-  private checkCType (cType: string) {
-    if (cType) {
-      if (cType.includes(';')) {
-        cType = cType.split(';')[0]
-      }
-      if ((cType) === 'application/json') {
-        return 'json'
-      }
-      if (cTypeTXT.includes(cType)) {
-        return 'txt'
-      }
-    }
-    return false
+  private getLogFileName(date: Date, index: number | undefined): string {
+    return (
+      os.hostname() +
+      '_' +
+      conf.projectName +
+      (date ? ('_' + dateFormat(date, fileFMT)) : '') +
+      (index ? '.' + index : '') +
+      '.' +
+      process.env.pm_id +
+      '.log'
+    );
   }
 
-  private formatResponseMessage(res: any, logFormat: string): string | object {
-    const statusCode = res.statusCode;
-    const headers = res.getHeaders();
-    const body = this.toStr(res.body); // Assuming `toStr` is available
-    const processAppTime = res._processAPP;
-    const responseTime = Date.now() - res._reqTimeForLog;
-  
-    return logFormat === 'pipe'
-      ? `OUTGOING|__STATUSCODE=${statusCode} __HEADERS=${JSON.stringify(headers)} __BODY=${body} __PROCESSAPP=${processAppTime} __RESTIME=${responseTime}`
-      : {
-          Type: 'OUTGOING',
-          StatusCode: statusCode,
-          Headers: headers,
-          Body: body,
-          ProcessApp: processAppTime,
-          ResTime: responseTime,
-        };
+  private getSummaryFileName(date: Date, index: number | undefined): string {
+    return (
+      os.hostname() +
+      '_' +
+      conf.projectName +
+      (date ? ('_' + dateFormat(date, fileFMT)) : '') +
+      (index ? '.' + index : '') +
+      '.' +
+      process.env.pm_id +
+      '.sum'
+    );
   }
 
-  private log(level: keyof typeof loggingLevels, ...args: any[]) {
-    if (loggingLevels[this.config.log.level] > loggingLevels[level]) return
-    this.write('app', this.formatAppLog(level, ...args))
+  private getDetailFileName(date: Date, index: number | undefined): string {
+    return (
+      os.hostname() +
+      '_' +
+      conf.projectName +
+      (date ? ('_' + dateFormat(date, fileFMT)) : '') +
+      (index ? '.' + index : '') +
+      '.' +
+      process.env.pm_id +
+      '.detail'
+    );
   }
 
-  debug(...args: any[]) {
-    this.log('debug', ...args)
+  private getConf(type: string): ConfigurationType {
+    if (type === 'app') return conf.log;
+    else if (type === 'smr') return conf.summary;
+    else if (type === 'dtl') return conf.detail;
+    return conf.log; // Default to app configuration
   }
 
-  info(...args: any[]) {
-    this.log('info', ...args)
-  }
-  warn(...args: any[]) {
-    this.log('warn', ...args)
-  }
-  error(...args: any[]) {
-    this.log('error', ...args)
+  private generator(type: string): (time: Date, index: number | undefined) => string {
+    return (time, index) => {
+      if (type === 'app') return this.getLogFileName(time, index);
+      else if (type === 'smr') return this.getSummaryFileName(time, index);
+      else if (type === 'dtl') return this.getDetailFileName(time, index);
+      return this.getLogFileName(time, index); // Default to app log file name
+    };
   }
 
-  private toStr (txt: any) {
+  private createOpts(conf: ConfigurationType): rfs.Options {
+    const o: rfs.Options = {
+      path: conf.path,
+    };
+    if (conf.size) o.size = conf.size + 'K';
+    if (conf.time) o.interval = conf.time + 'm';
+    return o;
+  }
+
+  private createStream(type: string): any {
+    const conf = this.getConf(type);
+    const stream = rfs.createStream(this.generator(type) as rfs.Generator, this.createOpts(conf));
+    stream.on('error', function (err: Error) {
+      console.error(err);
+    });
+    return stream;
+  }
+
+  private toStr(txt: any): string {
     if (txt instanceof Error) {
-      return txt.message + ', ' + txt.stack
+      return txt.message + ', ' + txt.stack;
     } else if (txt instanceof Object) {
-      return JSON.stringify(txt)
+      return JSON.stringify(txt);
     } else {
-      return txt
+      return txt;
     }
   }
 
-  private write(type: ILogType, txt: string) {
-    try {
-      const streams = this.streamTasks[type]
-      if (streams) {
-        for (const stream of streams) {
-          try {
-            stream.write ? stream.write(txt + endOfLine) : stream.log ? stream?.log(txt) : ''
-          } catch (streamError) {
-            console.error('Error writing to stream:', streamError)
+  private printTxtJSON(rawMsg: any, _txt: any): void {
+    if (_txt instanceof Error) {
+      rawMsg.Message = _txt.message;
+      rawMsg.Stack = _txt.stack;
+    } else {
+      rawMsg.Message = _txt;
+    }
+  }
+
+  private processAppLog(lvlAppLog: string, ..._txt: any[]): string {
+    if (conf.log.format === 'pipe') {
+      let session;
+      let rtxt = '';
+      if (_txt instanceof Array) {
+        if (_txt.length > 1) {
+          session = _txt[0];
+          rtxt = this.toStr(_txt[1]);
+          for (let i = 2; i < _txt.length; i++) {
+            rtxt += ' ' + this.toStr(_txt[i]);
           }
+        } else {
+          session = '';
+          rtxt = this.toStr(_txt[0]);
         }
+      } else {
+        session = '';
+        rtxt = this.toStr(_txt);
       }
-    } catch (error) {
-      console.error('Error during logging:', error)
-    }
-  }
-
-  private formatAppLog(level: keyof typeof loggingLevels, ...args: any[]): string {
-    const formattedTxt = this.formatLogText(args);
-    const session = formattedTxt.startsWith('|') ? formattedTxt.slice(1) : ''; // Extract session if present
-    const text = formattedTxt.startsWith('|') ? formattedTxt.slice(session.length + 2) : formattedTxt; // Extract text
-
-    return this.config.log.format === 'pipe'
-      ? this.formatPipeLog(level, session, text)
-      : this.formatJSONLog(level, session, text);
-  }
-
-  private formatLogText(_txt: any[]): string {
-    const rTxt = _txt.map(this.toStr).join(' ') // Concisely join text parts
-    return rTxt
-  }
-
-  private formatPipeLog(lvlAppLog: string, session: string, txt: string): string {
-    return `${this.getDateTimeLogFormat(new Date())}|${session}|${lvlAppLog}|${txt}`
-  }
-
-  private formatJSONLog(level: string, session: string, text: string): string {
-    const rawMsg: LogMessage = {
-      LogType: 'App',
-      Host: os.hostname(),
-      AppName: this.config.projectName,
-      Instance: process.env.pm_id || '0',
-      InputTimeStamp: dateFormat(new Date(), dateFMT),
-      Level: level,
-      Session: session,
-      Message: text, // Add text to the message structure
-    };
-    return JSON.stringify(rawMsg);
-  }
-
-  private getDateTimeLogFormat (currentDates: Date) {
-    const years = currentDates.getFullYear()
-    const months = currentDates.getMonth() + 1
-    const day = currentDates.getDate()
-    const hours = currentDates.getHours()
-    const minutes = currentDates.getMinutes()
-    const second = currentDates.getSeconds()
-    const millisecs = currentDates.getMilliseconds()
-    const monthFormatted = months < 10 ? '0' + months : months
-    const dayFormatted = day < 10 ? '0' + day : day
-    const hourFormatted = hours < 10 ? '0' + hours : hours
-    const minFormatted = minutes < 10 ? '0' + minutes : minutes
-    const secFormatted = second < 10 ? '0' + second : second
-    let milliFormatted = null
-  
-    if (millisecs < 10) {
-      milliFormatted = '00' + millisecs
-    } else if (millisecs < 100) {
-      milliFormatted = '0' + millisecs
+      return `${this.getDateTimeLogFormat(new Date())}|${session}|${lvlAppLog}|${rtxt}`;
     } else {
-      milliFormatted = millisecs
+      const rawMsg: RawMessage = {
+        LogType: 'App',
+        Host: os.hostname(),
+        AppName: conf.projectName,
+        Instance: process.env.pm_id || '0',
+        InputTimeStamp: this.getDateTimeLogFormat(new Date()),
+        Level: lvlAppLog,
+        Message: ''
+      };
+
+      let session;
+      if (_txt instanceof Array) {
+        if (_txt.length > 1) {
+          session = _txt.shift();
+          if (_txt.length === 1) {
+            this.printTxtJSON(rawMsg, _txt[0]);
+          } else {
+            this.printTxtJSON(rawMsg, _txt);
+          }
+        } else {
+          session = '';
+          this.printTxtJSON(rawMsg, _txt[0]);
+        }
+      } else {
+        session = '';
+        this.printTxtJSON(rawMsg, _txt);
+      }
+      rawMsg.Session = session;
+      return JSON.stringify(rawMsg);
     }
-    const detail = '' + years + monthFormatted + dayFormatted + ' ' + hourFormatted + ':' + minFormatted + ':' + secFormatted + '.' + milliFormatted +
-       '|' + os.hostname() +
-       '|' + this.config.projectName +
-       '|' + process.env.pm_id
-    return detail
   }
 
-  setSessionIdProvider(provider: (req: any, res: any) => string | undefined) {
-    this.sessionIdProvider = provider;
+  private getDateTimeLogFormat(date: Date): string {
+    return dateFormat(date, dateFMT);
+  }
+
+  public debug(..._txt: any[]): void {
+    if (!conf.log.console || conf.log.level === 'debug') return;
+    const str = this.processAppLog('debug', ..._txt);
+    console.debug(str);
+    if (this.logStream) this.logStream.write(str + endOfLine);
+  }
+
+  public info(..._txt: any[]): void {
+    if (!conf.log.console || conf.log.level === 'info') return;
+    const str = this.processAppLog('info', ..._txt);
+    console.info(str);
+    if (this.logStream) this.logStream.write(str + endOfLine);
+  }
+
+  public warn(..._txt: any[]): void {
+    if (!conf.log.console || conf.log.level === 'warn') return;
+    const str = this.processAppLog('warn', ..._txt);
+    console.warn(str);
+    if (this.logStream) this.logStream.write(str + endOfLine);
+  }
+
+  public error(..._txt: any[]): void {
+    if (!conf.log.console || conf.log.level === 'error') return;
+    const str = this.processAppLog('error', ..._txt);
+    console.error(str);
+    if (this.logStream) this.logStream.write(str + endOfLine);
+  }
+
+  public ready(): boolean {
+    return this.logStream !== null;
+  }
+
+  public init(_conf?: Configuration): Log {
+    conf = _conf || conf;
+    if (!conf) return this;
+
+    this.logStream = this.createStream('app');
+    if (conf.log.console) {
+      this.logStream.on('rotated', () => {
+        if (conf.log.console) {
+          console.log(this.getLogFileName(new Date(), 0));
+        }
+      });
+    }
+
+    // ... (Initialize other streams)
+
+    return this;
+  }
+
+  public close(cb?: (result: boolean) => void): void {
+    if (this.logStream) this.logStream.end(cb);
   }
 }
+
+export const log = new Log().init(conf);
+
+// Example Usage
+log.debug('Debug log message');
+log.info('Information log message');
+log.warn('Warning log message');
+log.error('Error log message');
