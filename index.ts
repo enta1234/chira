@@ -69,19 +69,8 @@ type IResponse = Omit<express.Response, 'write'> & {
 interface Configuration {
   projectName: string
   log: LogConfiguration
-  summary: SummaryConfiguration
-  detail: DetailConfiguration
-}
-
-interface DetailLog {
-  Invoke: string
-  Event: string
-  Protocol?: string
-  Type: string
-  RawData?: any
-  Identity?: string
-  Data: any
-  ResTime?: any
+  // summary: SummaryConfiguration
+  // detail: DetailConfiguration
 }
 
 let conf: Configuration = {
@@ -96,22 +85,22 @@ let conf: Configuration = {
     autoAddResBody: true,
     format: 'json',
   },
-  summary: {
-    time: 15,
-    size: null,
-    path: './logs/summary/',
-    console: false,
-    file: true,
-    format: 'json',
-  },
-  detail: {
-    time: 15,
-    size: null,
-    path: './logs/detail/',
-    console: false,
-    file: true,
-    rawData: false
-  },
+  // summary: {
+  //   time: 15,
+  //   size: null,
+  //   path: './logs/summary/',
+  //   console: false,
+  //   file: true,
+  //   format: 'json',
+  // },
+  // detail: {
+  //   time: 15,
+  //   size: null,
+  //   path: './logs/detail/',
+  //   console: false,
+  //   file: true,
+  //   rawData: false
+  // }
 }
 
 interface RawMessage {
@@ -186,8 +175,8 @@ class Chira {
 
   private getConf(type: string): ConfigurationType {
     if (type === 'app') return conf.log
-    else if (type === 'smr') return conf.summary
-    else if (type === 'dtl') return conf.detail
+    // else if (type === 'smr') return conf.summary
+    // else if (type === 'dtl') return conf.detail
     return conf.log // Default to app configuration
   }
 
@@ -332,44 +321,6 @@ class Chira {
     this.writeLog('app', str)
   }
 
-  public detail (session: string, initInvoke: string, scenario: string, identity: string) {
-    const startTimeDate = new Date()
-    const timeCounter = {}
-    let inputTime: string | number | Date | undefined
-    let outputTime: string | number | Date | null | undefined
-
-    const detailLog: DetailLog = {
-      Invoke: '',
-      Event: '',
-      Type: '',
-      Data: null,
-    }
-
-    return {
-      setIdentity: function (identity: string) {
-        detailLog.Identity = identity
-      },
-      isRawDataEnabled: function () {
-        return conf.detail.rawData === true
-      },
-      addInputRequest: function (node: string, cmd: string, invoke: string, rawData: any, data: any, protocol: any, protocolMethod: any) {
-        this.addInput(node, cmd, invoke, 'req', rawData, data, undefined, protocol, protocolMethod)
-      },
-      // Add other methods as needed...
-
-      _buildValueProtocol: function (protocol: any, protocolMethod: any) {
-        let v;
-        if (protocol) {
-          v = protocol.toLowerCase();
-          if (protocolMethod) {
-            v = v + '.' + protocolMethod.toLowerCase();
-          }
-        }
-        return v;
-      },
-    }
-  }
-
   public ready(): boolean {
     return this.logStream !== null
   }
@@ -413,7 +364,6 @@ class Chira {
     if (conf.log) {
       if (conf.log.file) {
         if (!fs.existsSync(conf.log.path)) {
-          // fs.mkdirSync(conf.log.path)
           mkdirp.sync(conf.log.path)
         }
         this.streamTask.app.push(this.createStream('app'))
@@ -421,27 +371,25 @@ class Chira {
       if (conf.log.console) this.streamTask.app.push(console)
     }
 
-    if (conf.summary) {
-      if (conf.summary.file) {
-        if (!fs.existsSync(conf.summary.path)) {
-          // fs.mkdirSync(conf.summary.path);
-          mkdirp.sync(conf.summary.path)
-        }
-        this.streamTask.smr.push(this.createStream('smr'))
-      }
-      if (conf.summary.console) this.streamTask.smr.push(console)
-    }
+    // if (conf.summary) {
+    //   if (conf.summary.file) {
+    //     if (!fs.existsSync(conf.summary.path)) {
+    //       mkdirp.sync(conf.summary.path)
+    //     }
+    //     this.streamTask.smr.push(this.createStream('smr'))
+    //   }
+    //   if (conf.summary.console) this.streamTask.smr.push(console)
+    // }
 
-    if (conf.detail) {
-      if (conf.detail.file) {
-        if (!fs.existsSync(conf.detail.path)) {
-          // fs.mkdirSync(conf.detail.path);
-          mkdirp.sync(conf.detail.path)
-        }
-        this.streamTask.dtl.push(this.createStream('dtl'))
-      }
-      if (conf.detail.console) this.streamTask.dtl.push(console)
-    }
+    // if (conf.detail) {
+    //   if (conf.detail.file) {
+    //     if (!fs.existsSync(conf.detail.path)) {
+    //       mkdirp.sync(conf.detail.path)
+    //     }
+    //     this.streamTask.dtl.push(this.createStream('dtl'))
+    //   }
+    //   if (conf.detail.console) this.streamTask.dtl.push(console)
+    // }
   }
 
   private setLogLevel(logLevel: string) {
