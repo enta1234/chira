@@ -11,10 +11,9 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "jest",
     "test:init": "ts-jest config:init",
     "test:watch": "ts-jest --watchAll",
-    "test:ts": "jest --preset ts-jest --config jest.config.cjs"
+    "test": "jest --preset ts-jest --config jest.config.cjs"
   },
   "keywords": [
     "log",

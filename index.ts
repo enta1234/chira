@@ -66,7 +66,7 @@ type IResponse = Omit<express.Response, 'write'> & {
 }
 
 
-interface Configuration {
+export interface Configuration {
   projectName: string
   log: LogConfiguration
   // summary: SummaryConfiguration
@@ -136,8 +136,6 @@ class Chira {
 
   private getLogFileName(date: Date, index: number | undefined): string {
     return (
-      os.hostname() +
-      '_' +
       conf.projectName +
       (date ? ('_' + dateFormat(date, fileFMT)) : '') +
       (index ? '.' + index : '') +
@@ -147,31 +145,31 @@ class Chira {
     )
   }
 
-  private getSummaryFileName(date: Date, index: number | undefined): string {
-    return (
-      os.hostname() +
-      '_' +
-      conf.projectName +
-      (date ? ('_' + dateFormat(date, fileFMT)) : '') +
-      (index ? '.' + index : '') +
-      '.' +
-      process.env.pm_id +
-      '.sum'
-    )
-  }
+  // private getSummaryFileName(date: Date, index: number | undefined): string {
+  //   return (
+  //     os.hostname() +
+  //     '_' +
+  //     conf.projectName +
+  //     (date ? ('_' + dateFormat(date, fileFMT)) : '') +
+  //     (index ? '.' + index : '') +
+  //     '.' +
+  //     process.env.pm_id +
+  //     '.sum'
+  //   )
+  // }
 
-  private getDetailFileName(date: Date, index: number | undefined): string {
-    return (
-      os.hostname() +
-      '_' +
-      conf.projectName +
-      (date ? ('_' + dateFormat(date, fileFMT)) : '') +
-      (index ? '.' + index : '') +
-      '.' +
-      process.env.pm_id +
-      '.detail'
-    )
-  }
+  // private getDetailFileName(date: Date, index: number | undefined): string {
+  //   return (
+  //     os.hostname() +
+  //     '_' +
+  //     conf.projectName +
+  //     (date ? ('_' + dateFormat(date, fileFMT)) : '') +
+  //     (index ? '.' + index : '') +
+  //     '.' +
+  //     process.env.pm_id +
+  //     '.detail'
+  //   )
+  // }
 
   private getConf(type: string): ConfigurationType {
     if (type === 'app') return conf.log
@@ -183,8 +181,8 @@ class Chira {
   private generator(type: string): (time: Date, index: number | undefined) => string {
     return (time, index) => {
       if (type === 'app') return this.getLogFileName(time, index)
-      else if (type === 'smr') return this.getSummaryFileName(time, index)
-      else if (type === 'dtl') return this.getDetailFileName(time, index)
+      // else if (type === 'smr') return this.getSummaryFileName(time, index)
+      // else if (type === 'dtl') return this.getDetailFileName(time, index)
       return this.getLogFileName(time, index) // Default to app log file name
     }
   }
@@ -402,7 +400,7 @@ class Chira {
     } else if (logLevel === 'error') {
       return 3
     } else {
-      return 0
+      return 4
     }
   }
 
