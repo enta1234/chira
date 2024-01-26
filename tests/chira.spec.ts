@@ -4,7 +4,8 @@ describe('Chira', () => {
   let chiraInstance: Chira
 
   beforeEach(() => {
-    chiraInstance = new Chira().init()
+    const chira = new Chira()
+    chiraInstance = chira.init()
   })
 
   afterEach(() => {
@@ -21,10 +22,10 @@ describe('Chira', () => {
     expect(consoleDebugMock).toHaveBeenCalledWith(expect.stringContaining('Debug message'))
   })
 
-  // it('should close the log stream', () => {
-  //   const logStreamEndMock = jest.spyOn(chiraInstance.logStream, 'end').mockImplementation()
-  //   chiraInstance.close()
-  //   expect(logStreamEndMock).toHaveBeenCalled()
-  // })
+  it('should close the log stream', () => {
+    const logStreamEndMock = jest.spyOn(chiraInstance, 'close').mockImplementation()
+    chiraInstance.close()
+    expect(logStreamEndMock).toHaveBeenCalled()
+  })
 
 })
