@@ -73,6 +73,17 @@ interface Configuration {
   detail: DetailConfiguration
 }
 
+interface DetailLog {
+  Invoke: string
+  Event: string
+  Protocol?: string
+  Type: string
+  RawData?: any
+  Identity?: string
+  Data: any
+  ResTime?: any
+}
+
 let conf: Configuration = {
   projectName: 'PROJECT_NAME',
   log: {
@@ -319,6 +330,44 @@ class Chira {
     const str = this.processAppLog('error', ..._txt)
     console.error(str)
     this.writeLog('app', str)
+  }
+
+  public detail (session: string, initInvoke: string, scenario: string, identity: string) {
+    const startTimeDate = new Date()
+    const timeCounter = {}
+    let inputTime: string | number | Date | undefined
+    let outputTime: string | number | Date | null | undefined
+
+    const detailLog: DetailLog = {
+      Invoke: '',
+      Event: '',
+      Type: '',
+      Data: null,
+    }
+
+    return {
+      setIdentity: function (identity: string) {
+        detailLog.Identity = identity
+      },
+      isRawDataEnabled: function () {
+        return conf.detail.rawData === true
+      },
+      addInputRequest: function (node: string, cmd: string, invoke: string, rawData: any, data: any, protocol: any, protocolMethod: any) {
+        this.addInput(node, cmd, invoke, 'req', rawData, data, undefined, protocol, protocolMethod)
+      },
+      // Add other methods as needed...
+
+      _buildValueProtocol: function (protocol: any, protocolMethod: any) {
+        let v;
+        if (protocol) {
+          v = protocol.toLowerCase();
+          if (protocolMethod) {
+            v = v + '.' + protocolMethod.toLowerCase();
+          }
+        }
+        return v;
+      },
+    }
   }
 
   public ready(): boolean {
