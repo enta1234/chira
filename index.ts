@@ -9,7 +9,8 @@ import cron from 'node-cron'
 import express from 'express'
 
 const endOfLine: string = os.EOL
-// const dateFormat = (a:any, b:any) => 'dateFormat'
+
+process.env.pm_id = process.env.pm_id || '0'
 
 const dateFMT: string = 'yyyymmdd HH:MM:ss.l'
 const dateFMTSQL: string = 'yyyy-mm-dd HH:MM:ss.l'
@@ -60,11 +61,10 @@ type ConfigurationType = LogConfiguration | SummaryConfiguration | DetailConfigu
 type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>
 
 type IResponse = Omit<express.Response, 'write'> & {
-  write: (...data: any[]) => void
+  write: (...data: any[]) => any
 } | Omit<express.Response, 'end'> & {
-  end: (...data: any[]) => void
+  end: (...data: any[]) => any
 }
-
 
 export interface Configuration {
   projectName: string
@@ -129,8 +129,8 @@ class Chira {
     this.logStream = null
     this.streamTask = {
       app: [],
-      smr: [],
-      dtl: []
+      // smr: [],
+      // dtl: []
     }
   }
 
@@ -145,45 +145,15 @@ class Chira {
     )
   }
 
-  // private getSummaryFileName(date: Date, index: number | undefined): string {
-  //   return (
-  //     os.hostname() +
-  //     '_' +
-  //     conf.projectName +
-  //     (date ? ('_' + dateFormat(date, fileFMT)) : '') +
-  //     (index ? '.' + index : '') +
-  //     '.' +
-  //     process.env.pm_id +
-  //     '.sum'
-  //   )
-  // }
-
-  // private getDetailFileName(date: Date, index: number | undefined): string {
-  //   return (
-  //     os.hostname() +
-  //     '_' +
-  //     conf.projectName +
-  //     (date ? ('_' + dateFormat(date, fileFMT)) : '') +
-  //     (index ? '.' + index : '') +
-  //     '.' +
-  //     process.env.pm_id +
-  //     '.detail'
-  //   )
-  // }
-
   private getConf(type: string): ConfigurationType {
     if (type === 'app') return conf.log
-    // else if (type === 'smr') return conf.summary
-    // else if (type === 'dtl') return conf.detail
-    return conf.log // Default to app configuration
+    return conf.log
   }
 
   private generator(type: string): (time: Date, index: number | undefined) => string {
     return (time, index) => {
       if (type === 'app') return this.getLogFileName(time, index)
-      // else if (type === 'smr') return this.getSummaryFileName(time, index)
-      // else if (type === 'dtl') return this.getDetailFileName(time, index)
-      return this.getLogFileName(time, index) // Default to app log file name
+      return this.getLogFileName(time, index)
     }
   }
 
@@ -368,26 +338,6 @@ class Chira {
       }
       if (conf.log.console) this.streamTask.app.push(console)
     }
-
-    // if (conf.summary) {
-    //   if (conf.summary.file) {
-    //     if (!fs.existsSync(conf.summary.path)) {
-    //       mkdirp.sync(conf.summary.path)
-    //     }
-    //     this.streamTask.smr.push(this.createStream('smr'))
-    //   }
-    //   if (conf.summary.console) this.streamTask.smr.push(console)
-    // }
-
-    // if (conf.detail) {
-    //   if (conf.detail.file) {
-    //     if (!fs.existsSync(conf.detail.path)) {
-    //       mkdirp.sync(conf.detail.path)
-    //     }
-    //     this.streamTask.dtl.push(this.createStream('dtl'))
-    //   }
-    //   if (conf.detail.console) this.streamTask.dtl.push(console)
-    // }
   }
 
   private setLogLevel(logLevel: string) {
@@ -437,22 +387,24 @@ class Chira {
         res._processAPP = Date.now() - req._reqTimeForLog
       })
 
-      onFinished(res, (err, res) => {
+      onFinished(res, (err, _res) => {
         let txtLogRes
+        console.log('res.body: ', _res.body)
+        console.log('res.body: ', res.body)
         if (!req._reqTimeForLog) req._reqTimeForLog = Date.now()
         if (conf.log.format === 'pipe') {
           txtLogRes = `OUTGOING|__STATUSCODE=${res.statusCode} __HEADERS=${JSON.stringify(
-            res.getHeaders()
-          )} __BODY=${this.toStr(res.body)} __PROCESSAPP=${res._processAPP} __RESTIME=${
+            _res.getHeaders()
+          )} __BODY=${this.toStr(_res.body)} __PROCESSAPP=${_res._processAPP} __RESTIME=${
             Date.now() - req._reqTimeForLog
           }`
         } else {
           txtLogRes = {
             Type: 'OUTGOING',
-            StatusCode: res.statusCode,
-            Headers: res.getHeaders(),
-            Body: res.body,
-            ProcessApp: res._processAPP,
+            StatusCode: _res.statusCode,
+            Headers: _res.getHeaders(),
+            Body: _res.body,
+            ProcessApp: _res._processAPP,
             ResTime: Date.now() - req._reqTimeForLog,
           };
         }
@@ -476,6 +428,8 @@ class Chira {
     const oldWrite = res.write
     const oldEnd = res.end
     const chunks: Uint8Array[] | Buffer[] = []
+
+    const checkCType = this.checkCType
   
     res.write = (...restArgs: [data: any[]] | WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>[]) => {
       chunks.push(Buffer.from(restArgs[0] as any))
@@ -486,7 +440,7 @@ class Chira {
       if (restArgs[0]) {
         chunks.push(Buffer.from(restArgs[0]))
       }
-      const cType = this.checkCType(res.getHeaders()['content-type'] as string)
+      const cType = checkCType(res.getHeaders()['content-type'] as string)
       if (cType !== false) {
         try {
           if (cType === 'json') {
@@ -498,7 +452,7 @@ class Chira {
           console.error(error)
         }
       }
-      oldEnd.apply(res as express.Response, restArgs)
+      oldEnd.apply(res, restArgs)
     }
     next()
   }
