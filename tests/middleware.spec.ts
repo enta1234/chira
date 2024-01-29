@@ -2,7 +2,6 @@ import Chira, { Configuration } from '../index'
 import express, { Request, Response } from 'express'
 import request from 'supertest'
 
-
 describe('Middleware', () => {
   let logger: Chira
   let app: express.Express = express()
@@ -16,18 +15,19 @@ describe('Middleware', () => {
       level: 'debug',
       console: true,
       file: false,
-      autoAddResBody: false,
+      autoAddResBody: true,
       format: 'json'
     }
   }
 
   beforeEach(() => {
     app.use(express.json())
+    app.use(express.urlencoded({ extended: true }))
 
     logger = new Chira().init(tempConfig, app)
 
     app.post('/', (req: Request, res: Response) => {
-      res.json({ message: 'Hello, world!' })
+      res.status(400).json({ message: 'missing invalid' })
     })
   })
 
@@ -38,10 +38,20 @@ describe('Middleware', () => {
   it('should log response body when using logResponseBody middleware', async () => {
     const spyDebug = jest.spyOn(logger, 'debug')
 
-    await request(app).post('/').send({msg: 'hello'})
+    await request(app).post('/').send({ msg: 'hello' })
 
-    expect(spyDebug).toHaveBeenCalledWith(expect.stringContaining('INCOMING'))
-    // expect(spyDebug).toHaveBeenCalledWith(expect.stringContaining('OUTGOING'))
+    expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining({
+      Type: 'INCOMING',
+      Method: 'post',
+      Url: '/',
+      Body: { msg: 'hello' }
+    }))
+    expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining(
+      {
+        Type: 'OUTGOING',
+        StatusCode: 400,
+        Body: { message: 'missing invalid' }
+      }
+    ))
   })
-
 })

@@ -387,13 +387,11 @@ class Chira {
         res._processAPP = Date.now() - req._reqTimeForLog
       })
 
-      onFinished(res, (err, _res) => {
+      onFinished(res, (err: any, _res: express.Response) => {
         let txtLogRes
-        console.log('res.body: ', _res.body)
-        console.log('res.body: ', res.body)
         if (!req._reqTimeForLog) req._reqTimeForLog = Date.now()
         if (conf.log.format === 'pipe') {
-          txtLogRes = `OUTGOING|__STATUSCODE=${res.statusCode} __HEADERS=${JSON.stringify(
+          txtLogRes = `OUTGOING|__STATUSCODE=${_res.statusCode} __HEADERS=${JSON.stringify(
             _res.getHeaders()
           )} __BODY=${this.toStr(_res.body)} __PROCESSAPP=${_res._processAPP} __RESTIME=${
             Date.now() - req._reqTimeForLog
@@ -425,36 +423,53 @@ class Chira {
   }
 
   private logResponseBody (req: express.Request, res: IResponse, next: express.NextFunction) {
-    const oldWrite = res.write
-    const oldEnd = res.end
-    const chunks: Uint8Array[] | Buffer[] = []
+    try {
+      const oldWrite = res.write
+      const oldEnd = res.end
+      const chunks: Uint8Array[] | Buffer[] = []
 
-    const checkCType = this.checkCType
-  
-    res.write = (...restArgs: [data: any[]] | WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>[]) => {
-      chunks.push(Buffer.from(restArgs[0] as any))
-      oldWrite.apply(res, restArgs as any)
-    }
-  
-    res.end = (...restArgs: any[]) => {
-      if (restArgs[0]) {
-        chunks.push(Buffer.from(restArgs[0]))
+      res.write = (...restArgs: [data: any[]] | WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>[]) => {
+        chunks.push(Buffer.from(restArgs[0] as any))
+        oldWrite.apply(res, restArgs as any)
       }
-      const cType = checkCType(res.getHeaders()['content-type'] as string)
-      if (cType !== false) {
-        try {
-          if (cType === 'json') {
-            res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : ''
-          } else {
-            res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
-          }
-        } catch (error) {
-          console.error(error)
+    
+      res.end = ((...restArgs: any[]) => {
+        if (restArgs[0]) {
+          chunks.push(Buffer.from(restArgs[0]))
         }
-      }
-      oldEnd.apply(res, restArgs)
+
+        let cType = res.getHeaders()['content-type'] as string
+        let type = ''
+
+        if (cType.includes(';')) {
+          cType = cType.split(';')[0]
+        }
+
+        if (cType === 'application/json') {
+          type = 'json'
+        } else {
+          type = 'txt'
+        }
+
+        if (type) {
+          console.log('type: ', type);
+          try {
+            if (type === 'json') {
+              res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : ''
+            } else {
+              res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
+            }
+          } catch (error) {
+            console.error(error)
+          }
+        }
+        oldEnd.apply(res, restArgs)
+      }).bind(this)
+      next()
+    } catch (error) {
+      console.log('error: ', error)
+      res.status(500).json({ message: 'Internal Server Error.' })
     }
-    next()
   }
 
   private checkCType (cType: string) {
