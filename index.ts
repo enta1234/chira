@@ -119,11 +119,13 @@ interface StreamTask {
   [key: string]: any[]
 }
 
+type SessionIdProvider = ((req: express.Request, res: express.Response) => string | undefined) | undefined
+
 class Chira {
   private logStream: any
   private logLevel: number = 0
   private streamTask: StreamTask
-  private sessionIdProvider: ((req: any, res: any) => string | undefined) | undefined
+  private sessionIdProvider: SessionIdProvider
 
   constructor() {
     this.logStream = null
@@ -253,40 +255,41 @@ class Chira {
 
   private writeLog(type: string, txt: string) {
     for (const stream of this.streamTask[type]) {
-      if (!stream.write) {
-        stream.log(txt)
-      } else {
+      if (stream.write) {
         stream.write(txt + endOfLine)
       }
+      // else {
+        // stream.log(txt)
+      // }
     }
   }
 
   public debug(..._txt: any[]): void {
     if (this.logLevel > 0) return
     const str = this.processAppLog('debug', ..._txt)
-    console.debug(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.debug(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public info(..._txt: any[]): void {
     if (this.logLevel > 1) return
     const str = this.processAppLog('info', ..._txt)
-    console.info(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.info(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public warn(..._txt: any[]): void {
     if (this.logLevel > 2) return
     const str = this.processAppLog('warn', ..._txt)
-    console.warn(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.warn(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public error(..._txt: any[]): void {
     if (this.logLevel > 3) return
     const str = this.processAppLog('error', ..._txt)
-    console.error(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.error(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public ready(): boolean {
@@ -306,7 +309,7 @@ class Chira {
 
     this.initializeLogger()
 
-    process.stdin.resume()// so the program will not close instantly
+    process.stdin.resume()
     const exitHandler = (options: {[key: string]: boolean}) => {
       if (options.cleanup) {
         this.close()
@@ -452,7 +455,6 @@ class Chira {
         }
 
         if (type) {
-          console.log('type: ', type);
           try {
             if (type === 'json') {
               res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : ''
@@ -460,34 +462,17 @@ class Chira {
               res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
             }
           } catch (error) {
-            console.error(error)
           }
         }
         oldEnd.apply(res, restArgs)
       }).bind(this)
       next()
     } catch (error) {
-      console.log('error: ', error)
-      res.status(500).json({ message: 'Internal Server Error.' })
+      // res.status(500).json({ message: 'Internal Server Error.' })
     }
   }
 
-  private checkCType (cType: string) {
-    if (cType) {
-      if (cType.includes(';')) {
-        cType = cType.split(';')[0]
-      }
-      if ((cType) === 'application/json') {
-        return 'json'
-      }
-      if (cTypeTXT.includes(cType)) {
-        return 'txt'
-      }
-    }
-    return false
-  }
-
-  public setSessionId(provider: (req: any, res: any) => string | undefined) {
+  public setSessionId(provider: SessionIdProvider) {
     this.sessionIdProvider = provider
   }
 

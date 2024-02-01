@@ -20,11 +20,14 @@ describe('Middleware', () => {
     }
   }
 
+  const sessionId = (req: Request, res: Response) => req.headers['request-id'] ? req.headers['request-id'] as string : 'request-id'
+
   beforeEach(() => {
     app.use(express.json())
     app.use(express.urlencoded({ extended: true }))
 
     logger = new Chira().init(tempConfig, app)
+    logger.setSessionId(sessionId)
 
     app.post('/', (req: Request, res: Response) => {
       res.status(400).json({ message: 'missing invalid' })
@@ -35,19 +38,18 @@ describe('Middleware', () => {
     logger.close()
   })
 
-  it('should log response body when using logResponseBody middleware', async () => {
+  it('should log response body when using logResponseBody middleware', async () => { 
     const spyDebug = jest.spyOn(logger, 'debug')
-
     await request(app).post('/').send({ msg: 'hello' })
 
     expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining({
-      Type: 'INCOMING',
-      Method: 'post',
-      Url: '/',
-      Body: { msg: 'hello' }
-    }))
-    expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining(
-      {
+        Type: 'INCOMING',
+        Method: 'post',
+        Url: '/',
+        Body: { msg: 'hello' }
+      }
+    ))
+    expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining({
         Type: 'OUTGOING',
         StatusCode: 400,
         Body: { message: 'missing invalid' }
