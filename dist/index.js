@@ -34,6 +34,7 @@ const on_headers_1 = __importDefault(require("on-headers"));
 const on_finished_1 = __importDefault(require("on-finished"));
 const dateformat_1 = __importDefault(require("dateformat"));
 const endOfLine = os_1.default.EOL;
+process.env.pm_id = process.env.pm_id || '0';
 const dateFMT = 'yyyymmdd HH:MM:ss.l';
 const dateFMTSQL = 'yyyy-mm-dd HH:MM:ss.l';
 const fileFMT = 'yyyymmddHHMMss';
@@ -59,22 +60,6 @@ let conf = {
         autoAddResBody: true,
         format: 'json',
     },
-    summary: {
-        time: 15,
-        size: null,
-        path: './logs/summary/',
-        console: false,
-        file: true,
-        format: 'json',
-    },
-    detail: {
-        time: 15,
-        size: null,
-        path: './logs/detail/',
-        console: false,
-        file: true,
-        rawData: false
-    },
 };
 class Chira {
     constructor() {
@@ -82,57 +67,25 @@ class Chira {
         this.logStream = null;
         this.streamTask = {
             app: [],
-            smr: [],
-            dtl: []
         };
     }
     getLogFileName(date, index) {
-        return (os_1.default.hostname() +
-            '_' +
-            conf.projectName +
+        return (conf.projectName +
             (date ? ('_' + (0, dateformat_1.default)(date, fileFMT)) : '') +
             (index ? '.' + index : '') +
             '.' +
             process.env.pm_id +
             '.log');
     }
-    getSummaryFileName(date, index) {
-        return (os_1.default.hostname() +
-            '_' +
-            conf.projectName +
-            (date ? ('_' + (0, dateformat_1.default)(date, fileFMT)) : '') +
-            (index ? '.' + index : '') +
-            '.' +
-            process.env.pm_id +
-            '.sum');
-    }
-    getDetailFileName(date, index) {
-        return (os_1.default.hostname() +
-            '_' +
-            conf.projectName +
-            (date ? ('_' + (0, dateformat_1.default)(date, fileFMT)) : '') +
-            (index ? '.' + index : '') +
-            '.' +
-            process.env.pm_id +
-            '.detail');
-    }
     getConf(type) {
         if (type === 'app')
             return conf.log;
-        else if (type === 'smr')
-            return conf.summary;
-        else if (type === 'dtl')
-            return conf.detail;
         return conf.log;
     }
     generator(type) {
         return (time, index) => {
             if (type === 'app')
                 return this.getLogFileName(time, index);
-            else if (type === 'smr')
-                return this.getSummaryFileName(time, index);
-            else if (type === 'dtl')
-                return this.getDetailFileName(time, index);
             return this.getLogFileName(time, index);
         };
     }
@@ -236,10 +189,7 @@ class Chira {
     }
     writeLog(type, txt) {
         for (const stream of this.streamTask[type]) {
-            if (!stream.write) {
-                stream.log(txt);
-            }
-            else {
+            if (stream.write) {
                 stream.write(txt + endOfLine);
             }
         }
@@ -248,29 +198,37 @@ class Chira {
         if (this.logLevel > 0)
             return;
         const str = this.processAppLog('debug', ..._txt);
-        console.debug(str);
-        this.writeLog('app', str);
+        if (conf.log.console)
+            console.debug(str);
+        if (conf.log.file)
+            this.writeLog('app', str);
     }
     info(..._txt) {
         if (this.logLevel > 1)
             return;
         const str = this.processAppLog('info', ..._txt);
-        console.info(str);
-        this.writeLog('app', str);
+        if (conf.log.console)
+            console.info(str);
+        if (conf.log.file)
+            this.writeLog('app', str);
     }
     warn(..._txt) {
         if (this.logLevel > 2)
             return;
         const str = this.processAppLog('warn', ..._txt);
-        console.warn(str);
-        this.writeLog('app', str);
+        if (conf.log.console)
+            console.warn(str);
+        if (conf.log.file)
+            this.writeLog('app', str);
     }
     error(..._txt) {
         if (this.logLevel > 3)
             return;
         const str = this.processAppLog('error', ..._txt);
-        console.error(str);
-        this.writeLog('app', str);
+        if (conf.log.console)
+            console.error(str);
+        if (conf.log.file)
+            this.writeLog('app', str);
     }
     ready() {
         return this.logStream !== null;
@@ -312,26 +270,6 @@ class Chira {
             if (conf.log.console)
                 this.streamTask.app.push(console);
         }
-        if (conf.summary) {
-            if (conf.summary.file) {
-                if (!fs_1.default.existsSync(conf.summary.path)) {
-                    mkdirp_1.mkdirp.sync(conf.summary.path);
-                }
-                this.streamTask.smr.push(this.createStream('smr'));
-            }
-            if (conf.summary.console)
-                this.streamTask.smr.push(console);
-        }
-        if (conf.detail) {
-            if (conf.detail.file) {
-                if (!fs_1.default.existsSync(conf.detail.path)) {
-                    mkdirp_1.mkdirp.sync(conf.detail.path);
-                }
-                this.streamTask.dtl.push(this.createStream('dtl'));
-            }
-            if (conf.detail.console)
-                this.streamTask.dtl.push(console);
-        }
     }
     setLogLevel(logLevel) {
         if (logLevel === 'debug') {
@@ -347,7 +285,7 @@ class Chira {
             return 3;
         }
         else {
-            return 0;
+            return 4;
         }
     }
     initLoggerMiddleware(_express) {
@@ -384,20 +322,20 @@ class Chira {
                     req._reqTimeForLog = Date.now();
                 res._processAPP = Date.now() - req._reqTimeForLog;
             });
-            (0, on_finished_1.default)(res, (err, res) => {
+            (0, on_finished_1.default)(res, (err, _res) => {
                 let txtLogRes;
                 if (!req._reqTimeForLog)
                     req._reqTimeForLog = Date.now();
                 if (conf.log.format === 'pipe') {
-                    txtLogRes = `OUTGOING|__STATUSCODE=${res.statusCode} __HEADERS=${JSON.stringify(res.getHeaders())} __BODY=${this.toStr(res.body)} __PROCESSAPP=${res._processAPP} __RESTIME=${Date.now() - req._reqTimeForLog}`;
+                    txtLogRes = `OUTGOING|__STATUSCODE=${_res.statusCode} __HEADERS=${JSON.stringify(_res.getHeaders())} __BODY=${this.toStr(_res.body)} __PROCESSAPP=${_res._processAPP} __RESTIME=${Date.now() - req._reqTimeForLog}`;
                 }
                 else {
                     txtLogRes = {
                         Type: 'OUTGOING',
-                        StatusCode: res.statusCode,
-                        Headers: res.getHeaders(),
-                        Body: res.body,
-                        ProcessApp: res._processAPP,
+                        StatusCode: _res.statusCode,
+                        Headers: _res.getHeaders(),
+                        Body: _res.body,
+                        ProcessApp: _res._processAPP,
                         ResTime: Date.now() - req._reqTimeForLog,
                     };
                 }
@@ -415,55 +353,52 @@ class Chira {
         }
     }
     logResponseBody(req, res, next) {
-        const oldWrite = res.write;
-        const oldEnd = res.end;
-        const chunks = [];
-        res.write = (...restArgs) => {
-            chunks.push(Buffer.from(restArgs[0]));
-            oldWrite.apply(res, restArgs);
-        };
-        res.end = (...restArgs) => {
-            if (restArgs[0]) {
+        try {
+            const oldWrite = res.write;
+            const oldEnd = res.end;
+            const chunks = [];
+            res.write = (...restArgs) => {
                 chunks.push(Buffer.from(restArgs[0]));
-            }
-            const cType = this.checkCType(res.getHeaders()['content-type']);
-            if (cType !== false) {
-                try {
-                    if (cType === 'json') {
-                        res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : '';
+                oldWrite.apply(res, restArgs);
+            };
+            res.end = ((...restArgs) => {
+                if (restArgs[0]) {
+                    chunks.push(Buffer.from(restArgs[0]));
+                }
+                let cType = res.getHeaders()['content-type'];
+                let type = '';
+                if (cType.includes(';')) {
+                    cType = cType.split(';')[0];
+                }
+                if (cType === 'application/json') {
+                    type = 'json';
+                }
+                else {
+                    type = 'txt';
+                }
+                if (type) {
+                    try {
+                        if (type === 'json') {
+                            res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : '';
+                        }
+                        else {
+                            res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : '';
+                        }
                     }
-                    else {
-                        res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : '';
+                    catch (error) {
                     }
                 }
-                catch (error) {
-                    console.error(error);
-                }
-            }
-            oldEnd.apply(res, restArgs);
-        };
-        next();
-    }
-    checkCType(cType) {
-        if (cType) {
-            if (cType.includes(';')) {
-                cType = cType.split(';')[0];
-            }
-            if ((cType) === 'application/json') {
-                return 'json';
-            }
-            if (cTypeTXT.includes(cType)) {
-                return 'txt';
-            }
+                oldEnd.apply(res, restArgs);
+            }).bind(this);
+            next();
         }
-        return false;
+        catch (error) {
+        }
     }
     setSessionId(provider) {
         this.sessionIdProvider = provider;
     }
     close(cb) {
-        if (this.logStream)
-            this.logStream.end(cb);
         this.logStream = false;
     }
 }
