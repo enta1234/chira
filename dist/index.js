@@ -57,16 +57,25 @@ let conf = {
         level: 'debug',
         console: true,
         file: true,
-        autoAddResBody: true,
         format: 'json',
     },
+    info: {
+        time: 15,
+        size: null,
+        path: './logs/infoLog/',
+        console: false,
+        file: false,
+        rawData: false
+    }
 };
 class Chira {
     constructor() {
         this.logLevel = 0;
+        this.sessionIdProvider = () => '';
         this.logStream = null;
         this.streamTask = {
             app: [],
+            info: [],
         };
     }
     getLogFileName(date, index) {
@@ -80,11 +89,15 @@ class Chira {
     getConf(type) {
         if (type === 'app')
             return conf.log;
+        if (type === 'info')
+            return conf.info;
         return conf.log;
     }
     generator(type) {
         return (time, index) => {
             if (type === 'app')
+                return this.getLogFileName(time, index);
+            if (type === 'info')
                 return this.getLogFileName(time, index);
             return this.getLogFileName(time, index);
         };
@@ -184,6 +197,20 @@ class Chira {
             return JSON.stringify(rawMsg);
         }
     }
+    processInfoLog(session, reqLog, resLog, resTime) {
+        const rawMsg = {
+            LogType: 'Info',
+            Session: session || '',
+            Host: os_1.default.hostname(),
+            AppName: conf.projectName,
+            Instance: process.env.pm_id || '0',
+            InputTimeStamp: this.getDateTimeLogFormat(new Date()),
+            Request: reqLog,
+            Response: resLog,
+            ResTime: resTime
+        };
+        return JSON.stringify(rawMsg);
+    }
     getDateTimeLogFormat(date) {
         return (0, dateformat_1.default)(date, dateFMT);
     }
@@ -230,17 +257,22 @@ class Chira {
         if (conf.log.file)
             this.writeLog('app', str);
     }
+    infoLog(sid, reqLog, resLog, resTime) {
+        const str = this.processInfoLog(sid, reqLog, resLog, resTime);
+        if (conf.info.console)
+            console.info(str);
+        if (conf.info.file)
+            this.writeLog('info', str);
+    }
     ready() {
         return this.logStream !== null;
     }
     init(_conf, _express) {
         this.logStream = true;
         conf = _conf || conf;
-        if (conf.log) {
-            this.logLevel = this.setLogLevel(conf.log.level);
-            if (_express && this.logLevel === 0) {
-                this.initLoggerMiddleware(_express);
-            }
+        this.logLevel = this.setLogLevel(conf.log.level);
+        if (conf.info && _express) {
+            this.initLoggerMiddleware(_express);
         }
         this.initializeLogger();
         process.stdin.resume();
@@ -270,6 +302,16 @@ class Chira {
             if (conf.log.console)
                 this.streamTask.app.push(console);
         }
+        if (conf.info) {
+            if (conf.info.file) {
+                if (!fs_1.default.existsSync(conf.info.path)) {
+                    mkdirp_1.mkdirp.sync(conf.info.path);
+                }
+                this.streamTask.info.push(this.createStream('info'));
+            }
+            if (conf.info.console)
+                this.streamTask.info.push(console);
+        }
     }
     setLogLevel(logLevel) {
         if (logLevel === 'debug') {
@@ -293,64 +335,34 @@ class Chira {
             var _a;
             req._reqTimeForLog = Date.now();
             const sid = (_a = this.sessionIdProvider) === null || _a === void 0 ? void 0 : _a.call(this, req, res);
-            if (conf.log.format === 'pipe') {
-                const txtLogReq = `INCOMING|__METHOD=${req.method.toLowerCase()} __URL=${req.url} __HEADERS=${JSON.stringify(req.headers)} __BODY=${this.toStr(req.body)}`;
-                if (sid) {
-                    this.debug(sid, txtLogReq);
-                }
-                else {
-                    this.debug(txtLogReq);
-                }
-            }
-            else {
-                const msg = {
-                    Type: 'INCOMING',
-                    Method: req.method.toLowerCase(),
-                    Url: req.url,
-                    Headers: req.headers,
-                    Body: req.body ? req.body : null,
-                };
-                if (sid) {
-                    this.debug(sid, msg);
-                }
-                else {
-                    this.debug(msg);
-                }
-            }
+            const txtLogReq = {
+                Type: 'INCOMING',
+                Method: req.method,
+                Url: req.url,
+                Headers: req.headers,
+                Body: req.body ? req.body : null,
+            };
             (0, on_headers_1.default)(res, () => {
                 if (!req._reqTimeForLog)
                     req._reqTimeForLog = Date.now();
                 res._processAPP = Date.now() - req._reqTimeForLog;
             });
             (0, on_finished_1.default)(res, (err, _res) => {
-                let txtLogRes;
                 if (!req._reqTimeForLog)
                     req._reqTimeForLog = Date.now();
-                if (conf.log.format === 'pipe') {
-                    txtLogRes = `OUTGOING|__STATUSCODE=${_res.statusCode} __HEADERS=${JSON.stringify(_res.getHeaders())} __BODY=${this.toStr(_res.body)} __PROCESSAPP=${_res._processAPP} __RESTIME=${Date.now() - req._reqTimeForLog}`;
-                }
-                else {
-                    txtLogRes = {
-                        Type: 'OUTGOING',
-                        StatusCode: _res.statusCode,
-                        Headers: _res.getHeaders(),
-                        Body: _res.body,
-                        ProcessApp: _res._processAPP,
-                        ResTime: Date.now() - req._reqTimeForLog,
-                    };
-                }
-                if (sid) {
-                    this.debug(sid, txtLogRes);
-                }
-                else {
-                    this.debug(txtLogRes);
-                }
+                let txtLogRes = {
+                    Type: 'OUTGOING',
+                    StatusCode: _res.statusCode,
+                    Headers: _res.getHeaders(),
+                    Body: _res.body,
+                    ProcessApp: _res._processAPP
+                };
+                const resTime = Date.now() - req._reqTimeForLog;
+                this.infoLog(sid || '', txtLogReq, txtLogRes, resTime);
             });
             next();
         });
-        if (conf.log.autoAddResBody) {
-            _express.use(this.logResponseBody);
-        }
+        _express.use(this.logResponseBody);
     }
     logResponseBody(req, res, next) {
         try {
@@ -395,8 +407,8 @@ class Chira {
         catch (error) {
         }
     }
-    setSessionId(provider) {
-        this.sessionIdProvider = provider;
+    setSessionId(callbackProvider) {
+        this.sessionIdProvider = callbackProvider;
     }
     close(cb) {
         this.logStream = false;
