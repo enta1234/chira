@@ -21,7 +21,9 @@ export interface Configuration {
     log: AppLogConfiguration;
     info: InfoLogConfiguration;
 }
-type SessionIdProvider = ((req: express.Request, res: express.Response) => string | undefined) | undefined;
+interface SessionIdProvider {
+    (req: express.Request, res: express.Response): string | undefined;
+}
 declare class Chira {
     private logStream;
     private logLevel;
@@ -50,7 +52,7 @@ declare class Chira {
     private setLogLevel;
     private initLoggerMiddleware;
     private logResponseBody;
-    setSessionId(provider: SessionIdProvider): void;
+    setSessionId(callbackProvider: SessionIdProvider): void;
     close(cb?: (result: boolean) => void): void;
 }
 export default Chira;

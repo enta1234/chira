@@ -60,17 +60,18 @@ let conf = {
         format: 'json',
     },
     info: {
-        time: 0,
+        time: 15,
         size: null,
         path: './logs/infoLog/',
         console: false,
-        file: true,
+        file: false,
         rawData: false
     }
 };
 class Chira {
     constructor() {
         this.logLevel = 0;
+        this.sessionIdProvider = () => '';
         this.logStream = null;
         this.streamTask = {
             app: [],
@@ -196,36 +197,18 @@ class Chira {
             return JSON.stringify(rawMsg);
         }
     }
-    processInfoLog(lvlAppLog, ..._txt) {
+    processInfoLog(session, reqLog, resLog, resTime) {
         const rawMsg = {
             LogType: 'Info',
+            Session: session || '',
             Host: os_1.default.hostname(),
             AppName: conf.projectName,
             Instance: process.env.pm_id || '0',
             InputTimeStamp: this.getDateTimeLogFormat(new Date()),
-            Message: ''
+            Request: reqLog,
+            Response: resLog,
+            ResTime: resTime
         };
-        let session;
-        if (_txt instanceof Array) {
-            if (_txt.length > 1) {
-                session = _txt.shift();
-                if (_txt.length === 1) {
-                    this.printTxtJSON(rawMsg, _txt[0]);
-                }
-                else {
-                    this.printTxtJSON(rawMsg, _txt);
-                }
-            }
-            else {
-                session = '';
-                this.printTxtJSON(rawMsg, _txt[0]);
-            }
-        }
-        else {
-            session = '';
-            this.printTxtJSON(rawMsg, _txt);
-        }
-        rawMsg.Session = session;
         return JSON.stringify(rawMsg);
     }
     getDateTimeLogFormat(date) {
@@ -274,8 +257,8 @@ class Chira {
         if (conf.log.file)
             this.writeLog('app', str);
     }
-    infoLog(..._txt) {
-        const str = this.processAppLog('request', ..._txt);
+    infoLog(sid, reqLog, resLog, resTime) {
+        const str = this.processInfoLog(sid, reqLog, resLog, resTime);
         if (conf.info.console)
             console.info(str);
         if (conf.info.file)
@@ -354,7 +337,7 @@ class Chira {
             const sid = (_a = this.sessionIdProvider) === null || _a === void 0 ? void 0 : _a.call(this, req, res);
             const txtLogReq = {
                 Type: 'INCOMING',
-                Method: req.method.toLowerCase(),
+                Method: req.method,
                 Url: req.url,
                 Headers: req.headers,
                 Body: req.body ? req.body : null,
@@ -365,23 +348,17 @@ class Chira {
                 res._processAPP = Date.now() - req._reqTimeForLog;
             });
             (0, on_finished_1.default)(res, (err, _res) => {
-                let txtLogRes;
                 if (!req._reqTimeForLog)
                     req._reqTimeForLog = Date.now();
-                txtLogRes = {
+                let txtLogRes = {
                     Type: 'OUTGOING',
                     StatusCode: _res.statusCode,
                     Headers: _res.getHeaders(),
                     Body: _res.body,
-                    ProcessApp: _res._processAPP,
-                    ResTime: Date.now() - req._reqTimeForLog,
+                    ProcessApp: _res._processAPP
                 };
-                if (sid) {
-                    this.infoLog(sid, txtLogReq, txtLogRes);
-                }
-                else {
-                    this.infoLog(txtLogReq, txtLogRes);
-                }
+                const resTime = Date.now() - req._reqTimeForLog;
+                this.infoLog(sid || '', txtLogReq, txtLogRes, resTime);
             });
             next();
         });
@@ -430,8 +407,8 @@ class Chira {
         catch (error) {
         }
     }
-    setSessionId(provider) {
-        this.sessionIdProvider = provider;
+    setSessionId(callbackProvider) {
+        this.sessionIdProvider = callbackProvider;
     }
     close(cb) {
         this.logStream = false;
