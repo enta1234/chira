@@ -72,6 +72,7 @@ class Chira {
     constructor() {
         this.logLevel = 0;
         this.sessionIdProvider = () => '';
+        this.sessionId = '';
         this.logStream = null;
         this.streamTask = {
             app: [],
@@ -140,7 +141,7 @@ class Chira {
             rawMsg.Message = _txt;
         }
     }
-    processAppLog(lvlAppLog, ..._txt) {
+    processAppLog(lvlAppLog, sid, ..._txt) {
         if (conf.log.format === 'pipe') {
             let session;
             let txtMsg = '';
@@ -167,6 +168,7 @@ class Chira {
             const rawMsg = {
                 LogType: 'App',
                 Host: os_1.default.hostname(),
+                Session: sid,
                 AppName: conf.projectName,
                 Instance: process.env.pm_id || '0',
                 InputTimeStamp: this.getDateTimeLogFormat(new Date()),
@@ -174,26 +176,8 @@ class Chira {
                 Message: ''
             };
             let session;
-            if (_txt instanceof Array) {
-                if (_txt.length > 1) {
-                    session = _txt.shift();
-                    if (_txt.length === 1) {
-                        this.printTxtJSON(rawMsg, _txt[0]);
-                    }
-                    else {
-                        this.printTxtJSON(rawMsg, _txt);
-                    }
-                }
-                else {
-                    session = '';
-                    this.printTxtJSON(rawMsg, _txt[0]);
-                }
-            }
-            else {
-                session = '';
-                this.printTxtJSON(rawMsg, _txt);
-            }
-            rawMsg.Session = session;
+            console.log('_txt: ', _txt);
+            this.printTxtJSON(rawMsg, _txt);
             return JSON.stringify(rawMsg);
         }
     }
@@ -224,7 +208,7 @@ class Chira {
     debug(..._txt) {
         if (this.logLevel > 0)
             return;
-        const str = this.processAppLog('debug', ..._txt);
+        const str = this.processAppLog('debug', this.sessionId, ..._txt);
         if (conf.log.console)
             console.debug(str);
         if (conf.log.file)
@@ -233,7 +217,7 @@ class Chira {
     info(..._txt) {
         if (this.logLevel > 1)
             return;
-        const str = this.processAppLog('info', ..._txt);
+        const str = this.processAppLog('info', this.sessionId, ..._txt);
         if (conf.log.console)
             console.info(str);
         if (conf.log.file)
@@ -242,7 +226,7 @@ class Chira {
     warn(..._txt) {
         if (this.logLevel > 2)
             return;
-        const str = this.processAppLog('warn', ..._txt);
+        const str = this.processAppLog('warn', this.sessionId, ..._txt);
         if (conf.log.console)
             console.warn(str);
         if (conf.log.file)
@@ -251,7 +235,7 @@ class Chira {
     error(..._txt) {
         if (this.logLevel > 3)
             return;
-        const str = this.processAppLog('error', ..._txt);
+        const str = this.processAppLog('error', this.sessionId, ..._txt);
         if (conf.log.console)
             console.error(str);
         if (conf.log.file)
@@ -335,6 +319,7 @@ class Chira {
             var _a;
             req._reqTimeForLog = Date.now();
             const sid = (_a = this.sessionIdProvider) === null || _a === void 0 ? void 0 : _a.call(this, req, res);
+            this.sessionId = sid || '';
             const txtLogReq = {
                 Type: 'INCOMING',
                 Method: req.method,
