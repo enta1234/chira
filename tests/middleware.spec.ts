@@ -7,16 +7,23 @@ describe('Middleware', () => {
   let app: express.Express = express()
 
   const tempConfig: Configuration = {
-    projectName: 'Jest',
+    projectName: 'middleware',
     log: {
-      time: 15,
-      size: null,
-      path: './logs/middleware',
+      time: 1,
+      size: 5,
+      path: './logs/middleware/appLogs',
       level: 'debug',
       console: true,
-      file: false,
-      autoAddResBody: true,
+      file: true,
       format: 'json'
+    },
+    info: {
+      time: 1,
+      size: 5,
+      path: './logs/middleware/infoLogs',
+      console: true,
+      file: true,
+      rawData: false
     }
   }
 
@@ -30,6 +37,11 @@ describe('Middleware', () => {
     logger.setSessionId(sessionId)
 
     app.post('/', (req: Request, res: Response) => {
+      // logger.debug('debug')
+      logger.info('info')
+      // logger.warn('warn')
+      // logger.error('error')
+      // throw new Error('mookoom moho mak mak.')
       res.status(400).json({ message: 'missing invalid' })
     })
   })
@@ -38,7 +50,7 @@ describe('Middleware', () => {
     logger.close()
   })
 
-  it('should log response body when using logResponseBody middleware', async () => { 
+  it('should log response body when using logResponseBody middleware', async () => {
     const spyDebug = jest.spyOn(logger, 'debug')
     await request(app).post('/').send({ msg: 'hello' })
 

@@ -1,17 +1,25 @@
 import express from 'express';
-interface LogConfiguration {
-    time: number | null;
+interface AppLogConfiguration {
+    time: number;
     size: number | null;
     path: string;
     level: 'debug' | 'info' | 'warn' | 'error';
     console: boolean;
     file: boolean;
-    autoAddResBody: boolean;
     format: 'json' | 'pipe';
+}
+interface InfoLogConfiguration {
+    time: number;
+    size: number | null;
+    path: string;
+    console: boolean;
+    file: boolean;
+    rawData: boolean;
 }
 export interface Configuration {
     projectName: string;
-    log: LogConfiguration;
+    log: AppLogConfiguration;
+    info: InfoLogConfiguration;
 }
 type SessionIdProvider = ((req: express.Request, res: express.Response) => string | undefined) | undefined;
 declare class Chira {
@@ -28,12 +36,14 @@ declare class Chira {
     private toStr;
     private printTxtJSON;
     private processAppLog;
+    private processInfoLog;
     private getDateTimeLogFormat;
     private writeLog;
     debug(..._txt: any[]): void;
     info(..._txt: any[]): void;
     warn(..._txt: any[]): void;
     error(..._txt: any[]): void;
+    private infoLog;
     ready(): boolean;
     init(_conf?: Configuration, _express?: express.Express): Chira;
     private initializeLogger;
