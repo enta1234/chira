@@ -176,7 +176,6 @@ class Chira {
                 Message: ''
             };
             let session;
-            console.log('_txt: ', _txt);
             this.printTxtJSON(rawMsg, _txt);
             return JSON.stringify(rawMsg);
         }

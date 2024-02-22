@@ -244,7 +244,6 @@ class Chira {
       }
 
       let session
-      console.log('_txt: ', _txt)
       // if (_txt instanceof Array) {
       //   if (_txt.length > 1) {
       //     session = _txt.shift()
@@ -348,7 +347,7 @@ class Chira {
       this.initLoggerMiddleware(_express)
     }
     
-    // create dir logs
+    // create logs dir
     this.initializeLogger()
 
     process.stdin.resume()
@@ -443,9 +442,6 @@ class Chira {
     })
 
     _express.use(this.logResponseBody as any)
-    // if (conf.log.autoAddResBody) {
-    //   _express.use(this.logResponseBody as any)
-    // }
   }
 
   private logResponseBody (req: express.Request, res: IResponse, next: express.NextFunction) {
