@@ -49,6 +49,12 @@ declare class Chira {
     private infoLog;
     ready(): boolean;
     init(_conf?: Configuration, _express?: express.Express): Chira;
+    logger(sid?: string): {
+        debug: (...x: any[]) => void;
+        info: (...x: any[]) => void;
+        warn: (...x: any[]) => void;
+        error: (...x: any[]) => void;
+    };
     private initializeLogger;
     private setLogLevel;
     private initLoggerMiddleware;

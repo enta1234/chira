@@ -264,6 +264,16 @@ class Chira {
         process.on('uncaughtException', exitHandler.bind(null, { exit: true }));
         return this;
     }
+    logger(sid) {
+        const sessionId = sid || this.sessionId;
+        const logs = {
+            debug: (...x) => this.debug(sessionId, ...x),
+            info: (...x) => this.info(sessionId, ...x),
+            warn: (...x) => this.warn(sessionId, ...x),
+            error: (...x) => this.error(sessionId, ...x)
+        };
+        return logs;
+    }
     initializeLogger() {
         if (conf.log) {
             if (conf.log.file) {
