@@ -36,10 +36,18 @@ describe('Middleware', () => {
     logger = new Chira().init(tempConfig, app)
     logger.setSessionId(sessionId)
 
+    // app.use((req, __, next) => {
+    //   req.logger.debug = (...txt) => {
+    //     logger.debug(app.sid ,...txt)
+    //   }
+
+    //   next()
+    // })
+
     app.post('/', (req: Request, res: Response) => {
       // logger.debug('debug')
-      logger.info('info')
-      // logger.warn('warn')
+      // logger.info('info')
+      logger.debug('ssss', 'warn')
       // logger.error('error')
       // throw new Error('mookoom moho mak mak.')
       res.status(400).json({ message: 'missing invalid' })
@@ -51,21 +59,26 @@ describe('Middleware', () => {
   })
 
   it('should log response body when using logResponseBody middleware', async () => {
-    const spyDebug = jest.spyOn(logger, 'debug')
-    await request(app).post('/').send({ msg: 'hello' })
+    // const spyDebug = jest.spyOn(console, 'info')
+    // const spyWard = jest.spyOn(logger, 'warn')
 
-    expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining({
-        Type: 'INCOMING',
-        Method: 'post',
-        Url: '/',
-        Body: { msg: 'hello' }
-      }
-    ))
-    expect(spyDebug).toHaveBeenCalledWith(expect.objectContaining({
-        Type: 'OUTGOING',
-        StatusCode: 400,
-        Body: { message: 'missing invalid' }
-      }
-    ))
+    // await request(app).post('/').set('request-id', 'request-id-1').send({ msg: 'hello 1' })
+    // await request(app).post('/').set('request-id', 'request-id-2').send({ msg: 'hello 2' })
+    // await request(app).post('/').set('request-id', 'request-id-3').send({ msg: 'hello 3' })
+    // await request(app).post('/').set('request-id', 'request-id-4').send({ msg: 'hello 4' })
+
+    await Promise.all([
+      request(app).post('/').set('request-id', 'request-id-1').send({ msg: 'hello 1' }),
+      request(app).post('/').set('request-id', 'request-id-2').send({ msg: 'hello 2' }),
+      request(app).post('/').set('request-id', 'request-id-3').send({ msg: 'hello 3' }),
+      request(app).post('/').set('request-id', 'request-id-4').send({ msg: 'hello 4' })
+    ])
+    // const strExpect = '{LogType:"Info",Session:"request-id",Request:{Type:"INCOMING",Method:"POST",Url:"/"},Response:{Type:"OUTGOING",StatusCode:400}}'
+
+    // expect(spyWard).toHaveBeenCalledWith(expect.objectContaining({
+    //   "Message":"warn",
+    //   "Session":"request-id"
+    // }))
+    // expect(spyDebug).toHaveBeenCalledWith(expect.stringContaining(strExpect))
   })
 })

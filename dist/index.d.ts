@@ -29,6 +29,7 @@ declare class Chira {
     private logLevel;
     private streamTask;
     private sessionIdProvider;
+    private sessionId;
     constructor();
     private getLogFileName;
     private getConf;

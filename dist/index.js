@@ -72,6 +72,7 @@ class Chira {
     constructor() {
         this.logLevel = 0;
         this.sessionIdProvider = () => '';
+        this.sessionId = '';
         this.logStream = null;
         this.streamTask = {
             app: [],
@@ -141,61 +142,33 @@ class Chira {
         }
     }
     processAppLog(lvlAppLog, ..._txt) {
-        if (conf.log.format === 'pipe') {
-            let session;
-            let txtMsg = '';
-            if (_txt instanceof Array) {
-                if (_txt.length > 1) {
-                    session = _txt[0];
-                    txtMsg = this.toStr(_txt[1]);
-                    for (let i = 2; i < _txt.length; i++) {
-                        txtMsg += ' ' + this.toStr(_txt[i]);
-                    }
-                }
-                else {
-                    session = '';
-                    txtMsg = this.toStr(_txt[0]);
-                }
+        const rawMsg = {
+            LogType: 'App',
+            Host: os_1.default.hostname(),
+            Session: '',
+            AppName: conf.projectName,
+            Instance: process.env.pm_id || '0',
+            InputTimeStamp: this.getDateTimeLogFormat(new Date()),
+            Level: lvlAppLog,
+            Message: ''
+        };
+        let session;
+        if (_txt instanceof Array) {
+            if (_txt.length > 1) {
+                session = _txt.shift();
+                this.printTxtJSON(rawMsg, _txt.join(','));
             }
             else {
                 session = '';
-                txtMsg = this.toStr(_txt);
+                this.printTxtJSON(rawMsg, _txt[0]);
             }
-            return `${this.getDateTimeLogFormat(new Date())}|${session}|${lvlAppLog}|${txtMsg}`;
         }
         else {
-            const rawMsg = {
-                LogType: 'App',
-                Host: os_1.default.hostname(),
-                AppName: conf.projectName,
-                Instance: process.env.pm_id || '0',
-                InputTimeStamp: this.getDateTimeLogFormat(new Date()),
-                Level: lvlAppLog,
-                Message: ''
-            };
-            let session;
-            if (_txt instanceof Array) {
-                if (_txt.length > 1) {
-                    session = _txt.shift();
-                    if (_txt.length === 1) {
-                        this.printTxtJSON(rawMsg, _txt[0]);
-                    }
-                    else {
-                        this.printTxtJSON(rawMsg, _txt);
-                    }
-                }
-                else {
-                    session = '';
-                    this.printTxtJSON(rawMsg, _txt[0]);
-                }
-            }
-            else {
-                session = '';
-                this.printTxtJSON(rawMsg, _txt);
-            }
-            rawMsg.Session = session;
-            return JSON.stringify(rawMsg);
+            session = '';
+            this.printTxtJSON(rawMsg, _txt);
         }
+        rawMsg.Session = session;
+        return JSON.stringify(rawMsg);
     }
     processInfoLog(session, reqLog, resLog, resTime) {
         const rawMsg = {
@@ -335,6 +308,7 @@ class Chira {
             var _a;
             req._reqTimeForLog = Date.now();
             const sid = (_a = this.sessionIdProvider) === null || _a === void 0 ? void 0 : _a.call(this, req, res);
+            this.sessionId = sid || '';
             const txtLogReq = {
                 Type: 'INCOMING',
                 Method: req.method,
