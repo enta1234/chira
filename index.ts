@@ -211,58 +211,33 @@ class Chira {
     }
   }
 
-  private processAppLog(lvlAppLog: string, sid: string, ..._txt: any[]): string {
-    if (conf.log.format === 'pipe') {
-      let session
-      let txtMsg = ''
-      if (_txt instanceof Array) {
-        if (_txt.length > 1) {
-          session = _txt[0]
-          txtMsg = this.toStr(_txt[1])
-          for (let i = 2; i < _txt.length; i++) {
-            txtMsg += ' ' + this.toStr(_txt[i])
-          }
-        } else {
-          session = ''
-          txtMsg = this.toStr(_txt[0])
-        }
+  private processAppLog(lvlAppLog: string, ..._txt: any[]): string {
+    const rawMsg: RawAppMessage = {
+      LogType: 'App',
+      Host: os.hostname(),
+      Session: '',
+      AppName: conf.projectName,
+      Instance: process.env.pm_id || '0',
+      InputTimeStamp: this.getDateTimeLogFormat(new Date()),
+      Level: lvlAppLog,
+      Message: ''
+    }
+
+    let session
+    if (_txt instanceof Array) {
+      if (_txt.length > 1) {
+        session = _txt.shift()
+        this.printTxtJSON(rawMsg, _txt.join(','))
       } else {
         session = ''
-        txtMsg = this.toStr(_txt)
+        this.printTxtJSON(rawMsg, _txt[0])
       }
-      return `${this.getDateTimeLogFormat(new Date())}|${session}|${lvlAppLog}|${txtMsg}`
     } else {
-      const rawMsg: RawAppMessage = {
-        LogType: 'App',
-        Host: os.hostname(),
-        Session: sid,
-        AppName: conf.projectName,
-        Instance: process.env.pm_id || '0',
-        InputTimeStamp: this.getDateTimeLogFormat(new Date()),
-        Level: lvlAppLog,
-        Message: ''
-      }
-
-      let session
-      // if (_txt instanceof Array) {
-      //   if (_txt.length > 1) {
-      //     session = _txt.shift()
-      //     if (_txt.length === 1) {
-      //       this.printTxtJSON(rawMsg, _txt[0])
-      //     } else {
-            this.printTxtJSON(rawMsg, _txt)
-      //     }
-      //   } else {
-      //     session = ''
-      //     this.printTxtJSON(rawMsg, _txt[0])
-      //   }
-      // } else {
-      //   session = ''
-      //   this.printTxtJSON(rawMsg, _txt)
-      // }
-      // rawMsg.Session = session
-      return JSON.stringify(rawMsg)
+      session = ''
+      this.printTxtJSON(rawMsg, _txt)
     }
+    rawMsg.Session = session
+    return JSON.stringify(rawMsg)
   }
 
   private processInfoLog(session: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): string {
@@ -290,37 +265,34 @@ class Chira {
       if (stream.write) {
         stream.write(txt + endOfLine)
       }
-      // else {
-        // stream.log(txt)
-      // }
     }
   }
 
   // ============ [START] write appLog ============
   public debug(..._txt: any[]): void {
     if (this.logLevel > 0) return
-    const str = this.processAppLog('debug', this.sessionId,..._txt)
+    const str = this.processAppLog('debug',..._txt)
     if (conf.log.console) console.debug(str)
     if (conf.log.file) this.writeLog('app', str)
   }
 
   public info(..._txt: any[]): void {
     if (this.logLevel > 1) return
-    const str = this.processAppLog('info', this.sessionId, ..._txt)
+    const str = this.processAppLog('info', ..._txt)
     if (conf.log.console) console.info(str)
     if (conf.log.file) this.writeLog('app', str)
   }
 
   public warn(..._txt: any[]): void {
     if (this.logLevel > 2) return
-    const str = this.processAppLog('warn', this.sessionId, ..._txt)
+    const str = this.processAppLog('warn', ..._txt)
     if (conf.log.console) console.warn(str)
     if (conf.log.file) this.writeLog('app', str)
   }
 
   public error(..._txt: any[]): void {
     if (this.logLevel > 3) return
-    const str = this.processAppLog('error', this.sessionId, ..._txt)
+    const str = this.processAppLog('error', ..._txt)
     if (conf.log.console) console.error(str)
     if (conf.log.file) this.writeLog('app', str)
   }
