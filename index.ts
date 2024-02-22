@@ -344,6 +344,17 @@ class Chira {
     return this
   }
 
+  public logger(sid?: string) {
+    const sessionId = sid || this.sessionId
+    const logs = {
+      debug: (...x: any[]) => this.debug(sessionId, ...x),
+      info: (...x: any[]) => this.info(sessionId, ...x),
+      warn: (...x: any[]) => this.warn(sessionId, ...x),
+      error: (...x: any[]) => this.error(sessionId, ...x)
+    }
+    return logs
+  }
+
   private initializeLogger() {
     if (conf.log) {
       if (conf.log.file) {
