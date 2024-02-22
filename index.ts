@@ -9,7 +9,8 @@ import cron from 'node-cron'
 import express from 'express'
 
 const endOfLine: string = os.EOL
-// const dateFormat = (a:any, b:any) => 'dateFormat'
+
+process.env.pm_id = process.env.pm_id || '0'
 
 const dateFMT: string = 'yyyymmdd HH:MM:ss.l'
 const dateFMTSQL: string = 'yyyy-mm-dd HH:MM:ss.l'
@@ -26,51 +27,40 @@ const cTypeTXT: string[] = [
   'text/csv',
 ]
 
-interface LogConfiguration {
-  time: number | null
-  size: number | null
+interface AppLogConfiguration {
+  time: number // m
+  size: number | null // K
   path: string
   level: 'debug' | 'info' | 'warn' | 'error'
   console: boolean
   file: boolean
-  autoAddResBody: boolean
   format: 'json' | 'pipe'
 }
 
-interface SummaryConfiguration {
-  time: number
-  size: number | null
-  path: string
-  console: boolean
-  file: boolean
-  format: 'json' | 'pipe'
-}
-
-interface DetailConfiguration {
-  time: number
-  size: number | null
+interface InfoLogConfiguration {
+  time: number // m
+  size: number | null // K
   path: string
   console: boolean
   file: boolean
   rawData: boolean
 }
 
-type ConfigurationType = LogConfiguration | SummaryConfiguration | DetailConfiguration
+type ConfigurationType = AppLogConfiguration | InfoLogConfiguration
 
 type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>
 
 type IResponse = Omit<express.Response, 'write'> & {
-  write: (...data: any[]) => void
+  write: (...data: any[]) => any
 } | Omit<express.Response, 'end'> & {
-  end: (...data: any[]) => void
+  end: (...data: any[]) => any
 }
-
 
 export interface Configuration {
   projectName: string
-  log: LogConfiguration
+  log: AppLogConfiguration
+  info: InfoLogConfiguration
   // summary: SummaryConfiguration
-  // detail: DetailConfiguration
 }
 
 let conf: Configuration = {
@@ -82,28 +72,19 @@ let conf: Configuration = {
     level: 'debug',
     console: true,
     file: true,
-    autoAddResBody: true,
     format: 'json',
   },
-  // summary: {
-  //   time: 15,
-  //   size: null,
-  //   path: './logs/summary/',
-  //   console: false,
-  //   file: true,
-  //   format: 'json',
-  // },
-  // detail: {
-  //   time: 15,
-  //   size: null,
-  //   path: './logs/detail/',
-  //   console: false,
-  //   file: true,
-  //   rawData: false
-  // }
+  info: {
+    time: 15,
+    size: null,
+    path: './logs/infoLog/',
+    console: false,
+    file: false,
+    rawData: false
+  }
 }
 
-interface RawMessage {
+interface RawAppMessage {
   LogType: string
   Host: string
   AppName: string
@@ -115,22 +96,56 @@ interface RawMessage {
   Stack?: string
 }
 
+interface RawInfoMessage {
+  LogType: string
+  Host: string
+  AppName: string
+  Instance: string
+  InputTimeStamp: string | null
+  Session?: string
+  Request: RawInfoReq
+  Response: RawInfoRes
+  Stack?: string
+  ResTime: number
+}
+
+type RawInfoReq = {
+  Type: string
+  Method: string
+  Url: string
+  Headers: any
+  Body: any
+}
+
+type RawInfoRes = {
+  Type: string
+  StatusCode: number
+  Headers: any
+  Body: any
+  ProcessApp: number
+}
+
 interface StreamTask {
   [key: string]: any[]
 }
 
+// export type SessionIdProvider = ((req: express.Request, res: express.Response) => string | undefined) | undefined
+interface SessionIdProvider {
+  (req: express.Request, res: express.Response): string | undefined
+}
 class Chira {
   private logStream: any
   private logLevel: number = 0
   private streamTask: StreamTask
-  private sessionIdProvider: ((req: any, res: any) => string | undefined) | undefined
+  private sessionIdProvider: SessionIdProvider = () => ''
+  private sessionId : string = ''
 
   constructor() {
     this.logStream = null
     this.streamTask = {
       app: [],
-      smr: [],
-      dtl: []
+      info: [],
+      // dtl: []
     }
   }
 
@@ -145,45 +160,17 @@ class Chira {
     )
   }
 
-  // private getSummaryFileName(date: Date, index: number | undefined): string {
-  //   return (
-  //     os.hostname() +
-  //     '_' +
-  //     conf.projectName +
-  //     (date ? ('_' + dateFormat(date, fileFMT)) : '') +
-  //     (index ? '.' + index : '') +
-  //     '.' +
-  //     process.env.pm_id +
-  //     '.sum'
-  //   )
-  // }
-
-  // private getDetailFileName(date: Date, index: number | undefined): string {
-  //   return (
-  //     os.hostname() +
-  //     '_' +
-  //     conf.projectName +
-  //     (date ? ('_' + dateFormat(date, fileFMT)) : '') +
-  //     (index ? '.' + index : '') +
-  //     '.' +
-  //     process.env.pm_id +
-  //     '.detail'
-  //   )
-  // }
-
   private getConf(type: string): ConfigurationType {
     if (type === 'app') return conf.log
-    // else if (type === 'smr') return conf.summary
-    // else if (type === 'dtl') return conf.detail
-    return conf.log // Default to app configuration
+    if (type === 'info') return conf.info
+    return conf.log
   }
 
   private generator(type: string): (time: Date, index: number | undefined) => string {
     return (time, index) => {
       if (type === 'app') return this.getLogFileName(time, index)
-      // else if (type === 'smr') return this.getSummaryFileName(time, index)
-      // else if (type === 'dtl') return this.getDetailFileName(time, index)
-      return this.getLogFileName(time, index) // Default to app log file name
+      if (type === 'info') return this.getLogFileName(time, index)
+      return this.getLogFileName(time, index)
     }
   }
 
@@ -225,56 +212,48 @@ class Chira {
   }
 
   private processAppLog(lvlAppLog: string, ..._txt: any[]): string {
-    if (conf.log.format === 'pipe') {
-      let session
-      let txtMsg = ''
-      if (_txt instanceof Array) {
-        if (_txt.length > 1) {
-          session = _txt[0]
-          txtMsg = this.toStr(_txt[1])
-          for (let i = 2; i < _txt.length; i++) {
-            txtMsg += ' ' + this.toStr(_txt[i])
-          }
-        } else {
-          session = ''
-          txtMsg = this.toStr(_txt[0])
-        }
-      } else {
-        session = ''
-        txtMsg = this.toStr(_txt)
-      }
-      return `${this.getDateTimeLogFormat(new Date())}|${session}|${lvlAppLog}|${txtMsg}`
-    } else {
-      const rawMsg: RawMessage = {
-        LogType: 'App',
-        Host: os.hostname(),
-        AppName: conf.projectName,
-        Instance: process.env.pm_id || '0',
-        InputTimeStamp: this.getDateTimeLogFormat(new Date()),
-        Level: lvlAppLog,
-        Message: ''
-      }
-
-      let session
-      if (_txt instanceof Array) {
-        if (_txt.length > 1) {
-          session = _txt.shift()
-          if (_txt.length === 1) {
-            this.printTxtJSON(rawMsg, _txt[0])
-          } else {
-            this.printTxtJSON(rawMsg, _txt)
-          }
-        } else {
-          session = ''
-          this.printTxtJSON(rawMsg, _txt[0])
-        }
-      } else {
-        session = ''
-        this.printTxtJSON(rawMsg, _txt)
-      }
-      rawMsg.Session = session
-      return JSON.stringify(rawMsg)
+    const rawMsg: RawAppMessage = {
+      LogType: 'App',
+      Host: os.hostname(),
+      Session: '',
+      AppName: conf.projectName,
+      Instance: process.env.pm_id || '0',
+      InputTimeStamp: this.getDateTimeLogFormat(new Date()),
+      Level: lvlAppLog,
+      Message: ''
     }
+
+    let session
+    if (_txt instanceof Array) {
+      if (_txt.length > 1) {
+        session = _txt.shift()
+        this.printTxtJSON(rawMsg, _txt.join(','))
+      } else {
+        session = ''
+        this.printTxtJSON(rawMsg, _txt[0])
+      }
+    } else {
+      session = ''
+      this.printTxtJSON(rawMsg, _txt)
+    }
+    rawMsg.Session = session
+    return JSON.stringify(rawMsg)
+  }
+
+  private processInfoLog(session: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): string {
+    const rawMsg: RawInfoMessage = {
+      LogType: 'Info',
+      Session: session || '',
+      Host: os.hostname(),
+      AppName: conf.projectName,
+      Instance: process.env.pm_id || '0',
+      InputTimeStamp: this.getDateTimeLogFormat(new Date()),
+      Request: reqLog,
+      Response: resLog,
+      ResTime: resTime
+    }
+
+    return JSON.stringify(rawMsg)
   }
 
   private getDateTimeLogFormat(date: Date): string {
@@ -283,41 +262,49 @@ class Chira {
 
   private writeLog(type: string, txt: string) {
     for (const stream of this.streamTask[type]) {
-      if (!stream.write) {
-        stream.log(txt)
-      } else {
+      if (stream.write) {
         stream.write(txt + endOfLine)
       }
     }
   }
 
+  // ============ [START] write appLog ============
   public debug(..._txt: any[]): void {
     if (this.logLevel > 0) return
-    const str = this.processAppLog('debug', ..._txt)
-    console.debug(str)
-    this.writeLog('app', str)
+    const str = this.processAppLog('debug',..._txt)
+    if (conf.log.console) console.debug(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public info(..._txt: any[]): void {
     if (this.logLevel > 1) return
     const str = this.processAppLog('info', ..._txt)
-    console.info(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.info(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public warn(..._txt: any[]): void {
     if (this.logLevel > 2) return
     const str = this.processAppLog('warn', ..._txt)
-    console.warn(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.warn(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
 
   public error(..._txt: any[]): void {
     if (this.logLevel > 3) return
     const str = this.processAppLog('error', ..._txt)
-    console.error(str)
-    this.writeLog('app', str)
+    if (conf.log.console) console.error(str)
+    if (conf.log.file) this.writeLog('app', str)
   }
+  // ============ [END] write appLog ============
+
+  // ============ [START] write infoLog ============
+  private infoLog(sid: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): void {
+    const str = this.processInfoLog(sid, reqLog, resLog, resTime)
+    if (conf.info.console) console.info(str)
+    if (conf.info.file) this.writeLog('info', str)
+  }
+  // ============ [END] write infoLog ============
 
   public ready(): boolean {
     return this.logStream !== null
@@ -326,17 +313,16 @@ class Chira {
   public init(_conf?: Configuration, _express?: express.Express): Chira {
     this.logStream = true
     conf = _conf || conf
-
-    if (conf.log) {
-      this.logLevel = this.setLogLevel(conf.log.level)
-      if (_express && this.logLevel === 0) {
-        this.initLoggerMiddleware(_express)
-      }
+    this.logLevel = this.setLogLevel(conf.log.level)
+    
+    if (conf.info && _express) {
+      this.initLoggerMiddleware(_express)
     }
-
+    
+    // create logs dir
     this.initializeLogger()
 
-    process.stdin.resume()// so the program will not close instantly
+    process.stdin.resume()
     const exitHandler = (options: {[key: string]: boolean}) => {
       if (options.cleanup) {
         this.close()
@@ -368,26 +354,15 @@ class Chira {
       }
       if (conf.log.console) this.streamTask.app.push(console)
     }
-
-    // if (conf.summary) {
-    //   if (conf.summary.file) {
-    //     if (!fs.existsSync(conf.summary.path)) {
-    //       mkdirp.sync(conf.summary.path)
-    //     }
-    //     this.streamTask.smr.push(this.createStream('smr'))
-    //   }
-    //   if (conf.summary.console) this.streamTask.smr.push(console)
-    // }
-
-    // if (conf.detail) {
-    //   if (conf.detail.file) {
-    //     if (!fs.existsSync(conf.detail.path)) {
-    //       mkdirp.sync(conf.detail.path)
-    //     }
-    //     this.streamTask.dtl.push(this.createStream('dtl'))
-    //   }
-    //   if (conf.detail.console) this.streamTask.dtl.push(console)
-    // }
+    if (conf.info) {
+      if (conf.info.file) {
+        if (!fs.existsSync(conf.info.path)) {
+          mkdirp.sync(conf.info.path)
+        }
+        this.streamTask.info.push(this.createStream('info'))
+      }
+      if (conf.info.console) this.streamTask.info.push(console)
+    }
   }
 
   private setLogLevel(logLevel: string) {
@@ -408,28 +383,13 @@ class Chira {
     _express.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
       req._reqTimeForLog = Date.now()
       const sid = this.sessionIdProvider?.(req, res)
-
-      if (conf.log.format === 'pipe') {
-        const txtLogReq = 
-          `INCOMING|__METHOD=${req.method.toLowerCase()} __URL=${req.url} __HEADERS=${JSON.stringify(req.headers)} __BODY=${this.toStr(req.body)}`
-        if (sid) {
-          this.debug(sid, txtLogReq)
-        } else {
-          this.debug(txtLogReq)
-        }
-      } else {
-        const msg = {
-          Type: 'INCOMING',
-          Method: req.method.toLowerCase(),
-          Url: req.url,
-          Headers: req.headers,
-          Body: req.body ? req.body : null,
-        };
-        if (sid) {
-          this.debug(sid, msg)
-        } else {
-          this.debug(msg)
-        }
+      this.sessionId = sid || ''
+      const txtLogReq: RawInfoReq = {
+        Type: 'INCOMING',
+        Method: req.method,
+        Url: req.url,
+        Headers: req.headers,
+        Body: req.body ? req.body : null,
       }
 
       onHeaders(res, () => {
@@ -437,89 +397,84 @@ class Chira {
         res._processAPP = Date.now() - req._reqTimeForLog
       })
 
-      onFinished(res, (err, res) => {
-        let txtLogRes
+      onFinished(res, (err: any, _res: express.Response) => {
         if (!req._reqTimeForLog) req._reqTimeForLog = Date.now()
-        if (conf.log.format === 'pipe') {
-          txtLogRes = `OUTGOING|__STATUSCODE=${res.statusCode} __HEADERS=${JSON.stringify(
-            res.getHeaders()
-          )} __BODY=${this.toStr(res.body)} __PROCESSAPP=${res._processAPP} __RESTIME=${
-            Date.now() - req._reqTimeForLog
-          }`
-        } else {
-          txtLogRes = {
-            Type: 'OUTGOING',
-            StatusCode: res.statusCode,
-            Headers: res.getHeaders(),
-            Body: res.body,
-            ProcessApp: res._processAPP,
-            ResTime: Date.now() - req._reqTimeForLog,
-          };
+        let txtLogRes: RawInfoRes = {
+          Type: 'OUTGOING',
+          StatusCode: _res.statusCode,
+          Headers: _res.getHeaders(),
+          Body: _res.body,
+          ProcessApp: _res._processAPP
         }
-
-        if (sid) {
-          this.debug(sid, txtLogRes)
-        } else {
-          this.debug(txtLogRes)
-        }
+        const resTime = Date.now() - req._reqTimeForLog
+        this.infoLog(sid || '', txtLogReq, txtLogRes, resTime)
       })
 
       next()
     })
 
-    if (conf.log.autoAddResBody) {
-      _express.use(this.logResponseBody as any)
-    }
+    _express.use(this.logResponseBody as any)
   }
 
   private logResponseBody (req: express.Request, res: IResponse, next: express.NextFunction) {
-    const oldWrite = res.write
-    const oldEnd = res.end
-    const chunks: Uint8Array[] | Buffer[] = []
-  
-    res.write = (...restArgs: [data: any[]] | WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>[]) => {
-      chunks.push(Buffer.from(restArgs[0] as any))
-      oldWrite.apply(res, restArgs as any)
-    }
-  
-    res.end = (...restArgs: any[]) => {
-      if (restArgs[0]) {
-        chunks.push(Buffer.from(restArgs[0]))
+    try {
+      const oldWrite = res.write
+      const oldEnd = res.end
+      const chunks: Uint8Array[] | Buffer[] = []
+
+      res.write = (...restArgs: [data: any[]] | WithImplicitCoercion<ArrayBuffer | SharedArrayBuffer>[]) => {
+        chunks.push(Buffer.from(restArgs[0] as any))
+        oldWrite.apply(res, restArgs as any)
       }
-      const cType = this.checkCType(res.getHeaders()['content-type'] as string)
-      if (cType !== false) {
-        try {
-          if (cType === 'json') {
-            res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : ''
-          } else {
-            res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
-          }
-        } catch (error) {
-          console.error(error)
+    
+      res.end = ((...restArgs: any[]) => {
+        if (restArgs[0]) {
+          chunks.push(Buffer.from(restArgs[0]))
         }
-      }
-      oldEnd.apply(res as express.Response, restArgs)
+
+        let cType = res.getHeaders()['content-type'] as string
+        let type = ''
+
+        if (cType.includes(';')) {
+          cType = cType.split(';')[0]
+        }
+
+        if (cType === 'application/json') {
+          type = 'json'
+        } else {
+          type = 'txt'
+        }
+
+        if (type) {
+          try {
+            if (type === 'json') {
+              res.body = chunks.length > 0 ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : ''
+            } else {
+              res.body = chunks.length > 0 ? Buffer.concat(chunks).toString('utf8') : ''
+            }
+          } catch (error) {
+          }
+        }
+        oldEnd.apply(res, restArgs)
+      }).bind(this)
+      next()
+    } catch (error) {
     }
-    next()
   }
 
-  private checkCType (cType: string) {
-    if (cType) {
-      if (cType.includes(';')) {
-        cType = cType.split(';')[0]
-      }
-      if ((cType) === 'application/json') {
-        return 'json'
-      }
-      if (cTypeTXT.includes(cType)) {
-        return 'txt'
-      }
-    }
-    return false
-  }
-
-  public setSessionId(provider: (req: any, res: any) => string | undefined) {
-    this.sessionIdProvider = provider
+  /**
+   * This function, setSessionId, is a method that accepts a parameter provider of type SessionIdProvider. 
+   * The SessionIdProvider is a type that can either be a function or undefined. If it’s a function, it takes two arguments: req and res, which are objects of types express.Request and express.Response respectively. The function returns a string or undefined.
+   * @param {SessionIdProvider} callbackProvider - The provider function that generates a session ID or undefined.
+   * 
+   * @example
+   * ```javascript
+   * const sessionId = (req: Request, res: Response) => req.headers['request-id']
+   * logger.setSessionId(sessionId)
+   * ```
+   */
+  public setSessionId(callbackProvider: SessionIdProvider) {
+    this.sessionIdProvider = callbackProvider
   }
 
   public close(cb?: (result: boolean) => void): void {
