@@ -30,6 +30,7 @@ declare class Chira {
     private streamTask;
     private sessionIdProvider;
     private sessionId;
+    logger: any;
     constructor();
     private getLogFileName;
     private getConf;
@@ -49,7 +50,7 @@ declare class Chira {
     private infoLog;
     ready(): boolean;
     init(_conf?: Configuration, _express?: express.Express): Chira;
-    logger(sid?: string): {
+    getLogger(sid?: string): {
         debug: (...x: any[]) => void;
         info: (...x: any[]) => void;
         warn: (...x: any[]) => void;
@@ -57,7 +58,7 @@ declare class Chira {
     };
     private initializeLogger;
     private setLogLevel;
-    private initLoggerMiddleware;
+    private initInfoLogger;
     private logResponseBody;
     setSessionId(callbackProvider: SessionIdProvider): void;
     close(cb?: (result: boolean) => void): void;
