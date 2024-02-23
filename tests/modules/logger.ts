@@ -10,16 +10,14 @@ const tempConfig: Configuration = {
     path: './logs/middleware/appLogs',
     level: 'debug',
     console: true,
-    file: true,
-    format: 'json'
+    file: true
   },
   info: {
     time: 1,
     size: 5,
     path: './logs/middleware/infoLogs',
     console: true,
-    file: true,
-    rawData: false
+    file: true
   }
 }
 
