@@ -12,7 +12,7 @@
     "build": "tsc",
     "test:init": "ts-jest config:init",
     "test:watch": "ts-jest --watchAll",
-    "test": "jest --preset ts-jest --config jest.config.js"
+    "test": "jest --preset ts-jest --config jest.config.ts"
   },
   "keywords": [
     "log",
