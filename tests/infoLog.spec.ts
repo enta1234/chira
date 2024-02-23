@@ -1,4 +1,4 @@
-import express, { Request, Response } from 'express'
+import express from 'express'
 import log from './modules/logger'
 import request from 'supertest'
 import { testLogger } from './controllers/simple'
