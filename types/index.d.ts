@@ -2,6 +2,7 @@ declare namespace Express {
   export interface Request {
     _reqTimeForLog?: number
     _processAPP?: number
+    sessionId?: string
   }
   export interface Response {
     _reqTimeForLog: number
