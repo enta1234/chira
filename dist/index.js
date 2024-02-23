@@ -156,7 +156,7 @@ class Chira {
         if (_txt instanceof Array) {
             if (_txt.length > 1) {
                 session = _txt.shift();
-                this.printTxtJSON(rawMsg, _txt.join(','));
+                this.printTxtJSON(rawMsg, _txt.join(', '));
             }
             else {
                 session = '';
@@ -245,7 +245,7 @@ class Chira {
         conf = _conf || conf;
         this.logLevel = this.setLogLevel(conf.log.level);
         if (conf.info && _express) {
-            this.initLoggerMiddleware(_express);
+            this.initInfoLogger(_express);
         }
         this.initializeLogger();
         process.stdin.resume();
@@ -263,6 +263,16 @@ class Chira {
         process.on('SIGUSR2', exitHandler.bind(null, { exit: true }));
         process.on('uncaughtException', exitHandler.bind(null, { exit: true }));
         return this;
+    }
+    getLogger(sid) {
+        const sessionId = sid || '';
+        const logs = {
+            debug: (...x) => this.debug(sessionId, ...x),
+            info: (...x) => this.info(sessionId, ...x),
+            warn: (...x) => this.warn(sessionId, ...x),
+            error: (...x) => this.error(sessionId, ...x)
+        };
+        return logs;
     }
     initializeLogger() {
         if (conf.log) {
@@ -303,12 +313,12 @@ class Chira {
             return 4;
         }
     }
-    initLoggerMiddleware(_express) {
+    initInfoLogger(_express) {
         _express.use((req, res, next) => {
             var _a;
             req._reqTimeForLog = Date.now();
             const sid = (_a = this.sessionIdProvider) === null || _a === void 0 ? void 0 : _a.call(this, req, res);
-            this.sessionId = sid || '';
+            req.sessionId = sid || '';
             const txtLogReq = {
                 Type: 'INCOMING',
                 Method: req.method,
@@ -386,6 +396,7 @@ class Chira {
     }
     close(cb) {
         this.logStream = false;
+        this.streamTask = {};
     }
 }
 exports.default = Chira;

@@ -34,7 +34,6 @@ interface AppLogConfiguration {
   level: 'debug' | 'info' | 'warn' | 'error'
   console: boolean
   file: boolean
-  format: 'json' | 'pipe'
 }
 
 interface InfoLogConfiguration {
@@ -43,7 +42,6 @@ interface InfoLogConfiguration {
   path: string
   console: boolean
   file: boolean
-  rawData: boolean
 }
 
 type ConfigurationType = AppLogConfiguration | InfoLogConfiguration
@@ -59,7 +57,7 @@ type IResponse = Omit<express.Response, 'write'> & {
 export interface Configuration {
   projectName: string
   log: AppLogConfiguration
-  info: InfoLogConfiguration
+  info?: InfoLogConfiguration
   // summary: SummaryConfiguration
 }
 
@@ -71,16 +69,14 @@ let conf: Configuration = {
     path: './logs/appLog/',
     level: 'debug',
     console: true,
-    file: true,
-    format: 'json',
+    file: true
   },
   info: {
     time: 15,
     size: null,
     path: './logs/infoLog/',
     console: false,
-    file: false,
-    rawData: false
+    file: false
   }
 }
 
@@ -107,6 +103,13 @@ interface RawInfoMessage {
   Response: RawInfoRes
   Stack?: string
   ResTime: number
+}
+
+export type Logger = {
+  debug: (...x: any[]) => void
+  info: (...x: any[]) => void
+  warn: (...x: any[]) => void
+  error: (...x: any[]) => void
 }
 
 type RawInfoReq = {
@@ -138,7 +141,8 @@ class Chira {
   private logLevel: number = 0
   private streamTask: StreamTask
   private sessionIdProvider: SessionIdProvider = () => ''
-  private sessionId : string = ''
+  private sessionId: string = ''
+  public logger: any
 
   constructor() {
     this.logStream = null
@@ -162,7 +166,7 @@ class Chira {
 
   private getConf(type: string): ConfigurationType {
     if (type === 'app') return conf.log
-    if (type === 'info') return conf.info
+    if (type === 'info' && conf.info) return conf.info
     return conf.log
   }
 
@@ -192,15 +196,15 @@ class Chira {
     return stream
   }
 
-  private toStr(txt: any): string {
-    if (txt instanceof Error) {
-      return txt.message + ', ' + txt.stack
-    } else if (txt instanceof Object) {
-      return JSON.stringify(txt)
-    } else {
-      return txt
-    }
-  }
+  // private toStr(txt: any): string {
+  //   if (txt instanceof Error) {
+  //     return txt.message + ', ' + txt.stack
+  //   } else if (txt instanceof Object) {
+  //     return JSON.stringify(txt)
+  //   } else {
+  //     return txt
+  //   }
+  // }
 
   private printTxtJSON(rawMsg: any, _txt: any): void {
     if (_txt instanceof Error) {
@@ -227,7 +231,7 @@ class Chira {
     if (_txt instanceof Array) {
       if (_txt.length > 1) {
         session = _txt.shift()
-        this.printTxtJSON(rawMsg, _txt.join(','))
+        this.printTxtJSON(rawMsg, _txt.join(', '))
       } else {
         session = ''
         this.printTxtJSON(rawMsg, _txt[0])
@@ -269,28 +273,28 @@ class Chira {
   }
 
   // ============ [START] write appLog ============
-  public debug(..._txt: any[]): void {
+  private debug(..._txt: any[]): void {
     if (this.logLevel > 0) return
-    const str = this.processAppLog('debug',..._txt)
+    const str = this.processAppLog('debug', ..._txt)
     if (conf.log.console) console.debug(str)
     if (conf.log.file) this.writeLog('app', str)
   }
 
-  public info(..._txt: any[]): void {
+  private info(..._txt: any[]): void {
     if (this.logLevel > 1) return
     const str = this.processAppLog('info', ..._txt)
     if (conf.log.console) console.info(str)
     if (conf.log.file) this.writeLog('app', str)
   }
 
-  public warn(..._txt: any[]): void {
+  private warn(..._txt: any[]): void {
     if (this.logLevel > 2) return
     const str = this.processAppLog('warn', ..._txt)
     if (conf.log.console) console.warn(str)
     if (conf.log.file) this.writeLog('app', str)
   }
 
-  public error(..._txt: any[]): void {
+  private error(..._txt: any[]): void {
     if (this.logLevel > 3) return
     const str = this.processAppLog('error', ..._txt)
     if (conf.log.console) console.error(str)
@@ -301,8 +305,8 @@ class Chira {
   // ============ [START] write infoLog ============
   private infoLog(sid: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): void {
     const str = this.processInfoLog(sid, reqLog, resLog, resTime)
-    if (conf.info.console) console.info(str)
-    if (conf.info.file) this.writeLog('info', str)
+    if (conf.info?.console) console.info(str)
+    if (conf.info?.file) this.writeLog('info', str)
   }
   // ============ [END] write infoLog ============
 
@@ -316,7 +320,7 @@ class Chira {
     this.logLevel = this.setLogLevel(conf.log.level)
     
     if (conf.info && _express) {
-      this.initLoggerMiddleware(_express)
+      this.initInfoLogger(_express)
     }
     
     // create logs dir
@@ -342,6 +346,17 @@ class Chira {
     process.on('uncaughtException', exitHandler.bind(null, { exit: true }))
 
     return this
+  }
+
+  public getLogger(sid?: string): Logger {
+    const sessionId = sid || ''
+    const logs = {
+      debug: (...x: any[]) => this.debug(sessionId, ...x),
+      info: (...x: any[]) => this.info(sessionId, ...x),
+      warn: (...x: any[]) => this.warn(sessionId, ...x),
+      error: (...x: any[]) => this.error(sessionId, ...x)
+    }
+    return logs
   }
 
   private initializeLogger() {
@@ -379,11 +394,11 @@ class Chira {
     }
   }
 
-  private initLoggerMiddleware(_express: express.Express): void {
+  private initInfoLogger(_express: express.Express): void {
     _express.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
       req._reqTimeForLog = Date.now()
       const sid = this.sessionIdProvider?.(req, res)
-      this.sessionId = sid || ''
+      req.sessionId = sid || ''
       const txtLogReq: RawInfoReq = {
         Type: 'INCOMING',
         Method: req.method,
@@ -426,7 +441,7 @@ class Chira {
         chunks.push(Buffer.from(restArgs[0] as any))
         oldWrite.apply(res, restArgs as any)
       }
-    
+
       res.end = ((...restArgs: any[]) => {
         if (restArgs[0]) {
           chunks.push(Buffer.from(restArgs[0]))
@@ -480,6 +495,7 @@ class Chira {
   public close(cb?: (result: boolean) => void): void {
     // if (this.logStream) this.logStream.end(cb)
     this.logStream = false
+    this.streamTask = {}
   }
 }
 
