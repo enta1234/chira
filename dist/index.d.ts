@@ -6,7 +6,6 @@ interface AppLogConfiguration {
     level: 'debug' | 'info' | 'warn' | 'error';
     console: boolean;
     file: boolean;
-    format: 'json' | 'pipe';
 }
 interface InfoLogConfiguration {
     time: number;
@@ -14,13 +13,18 @@ interface InfoLogConfiguration {
     path: string;
     console: boolean;
     file: boolean;
-    rawData: boolean;
 }
 export interface Configuration {
     projectName: string;
     log: AppLogConfiguration;
-    info: InfoLogConfiguration;
+    info?: InfoLogConfiguration;
 }
+export type Logger = {
+    debug: (...x: any[]) => void;
+    info: (...x: any[]) => void;
+    warn: (...x: any[]) => void;
+    error: (...x: any[]) => void;
+};
 interface SessionIdProvider {
     (req: express.Request, res: express.Response): string | undefined;
 }
@@ -37,25 +41,19 @@ declare class Chira {
     private generator;
     private createOpts;
     private createStream;
-    private toStr;
     private printTxtJSON;
     private processAppLog;
     private processInfoLog;
     private getDateTimeLogFormat;
     private writeLog;
-    debug(..._txt: any[]): void;
-    info(..._txt: any[]): void;
-    warn(..._txt: any[]): void;
-    error(..._txt: any[]): void;
+    private debug;
+    private info;
+    private warn;
+    private error;
     private infoLog;
     ready(): boolean;
     init(_conf?: Configuration, _express?: express.Express): Chira;
-    getLogger(sid?: string): {
-        debug: (...x: any[]) => void;
-        info: (...x: any[]) => void;
-        warn: (...x: any[]) => void;
-        error: (...x: any[]) => void;
-    };
+    getLogger(sid?: string): Logger;
     private initializeLogger;
     private setLogLevel;
     private initInfoLogger;

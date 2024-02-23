@@ -56,16 +56,14 @@ let conf = {
         path: './logs/appLog/',
         level: 'debug',
         console: true,
-        file: true,
-        format: 'json',
+        file: true
     },
     info: {
         time: 15,
         size: null,
         path: './logs/infoLog/',
         console: false,
-        file: false,
-        rawData: false
+        file: false
     }
 };
 class Chira {
@@ -90,7 +88,7 @@ class Chira {
     getConf(type) {
         if (type === 'app')
             return conf.log;
-        if (type === 'info')
+        if (type === 'info' && conf.info)
             return conf.info;
         return conf.log;
     }
@@ -120,17 +118,6 @@ class Chira {
             console.error(err);
         });
         return stream;
-    }
-    toStr(txt) {
-        if (txt instanceof Error) {
-            return txt.message + ', ' + txt.stack;
-        }
-        else if (txt instanceof Object) {
-            return JSON.stringify(txt);
-        }
-        else {
-            return txt;
-        }
     }
     printTxtJSON(rawMsg, _txt) {
         if (_txt instanceof Error) {
@@ -231,10 +218,11 @@ class Chira {
             this.writeLog('app', str);
     }
     infoLog(sid, reqLog, resLog, resTime) {
+        var _a, _b;
         const str = this.processInfoLog(sid, reqLog, resLog, resTime);
-        if (conf.info.console)
+        if ((_a = conf.info) === null || _a === void 0 ? void 0 : _a.console)
             console.info(str);
-        if (conf.info.file)
+        if ((_b = conf.info) === null || _b === void 0 ? void 0 : _b.file)
             this.writeLog('info', str);
     }
     ready() {
