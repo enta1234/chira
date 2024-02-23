@@ -1,23 +1,25 @@
-# How to use
+## Chira: Express Middleware Logger with Session Management
 
-This logger for express app and manage session id.
+Chira is a lightweight Express middleware logger that simplifies logging and adds session management capabilities to your application.
 
-## Installation
+### Installation
 
- ```
-  npm i github:enta1234/chira
- ```
+Install Chira using npm:
 
-## How to use
+```bash
+npm install github:enta1234/chira
+```
 
-### 1. Use appLog
+## Usage
 
-example
+### Basic Logging:
+
+1. Create a Chira instance and configure logging options:
 
 ```ts
 import Chira, { Configuration } from 'chira'
 
-const tempConfig: Configuration = {
+const config: Configuration = {
   projectName: 'project name',
   log: {
     time: 15, // Minute
@@ -29,25 +31,32 @@ const tempConfig: Configuration = {
   }
 }
 
-const chira = new Chira().init(tempConfig)
-const logger = chira.getLogger() // empty is no sessionId
-
-logger.debug('debug log')
-logger.info('info log')
-logger.warn('warn log')
-logger.error('error log')
+const chira = new Chira().init(config)
 ```
 
-result
+2. Use getLogger() to create a logger instance:
 
-```
-{"LogType":"App","Host":"","Session":"","AppName":"PROJECT_NAME","Instance":"0","InputTimeStamp":"","Level":"debug","Message":"Debug message"}
-{"LogType":"App","Host":"","Session":"","AppName":"PROJECT_NAME","Instance":"0","InputTimeStamp":"","Level":"info","Message":"Info message"}
-{"LogType":"App","Host":"","Session":"","AppName":"PROJECT_NAME","Instance":"0","InputTimeStamp":"","Level":"warn","Message":"Warn message"}
-{"LogType":"App","Host":"","Session":"","AppName":"PROJECT_NAME","Instance":"0","InputTimeStamp":"","Level":"error","Message":"Error message"}
+```ts
+const logger = chira.getLogger()
+
+logger.debug('Debug message')
+logger.info('Info message')
+logger.warn('Warning message')
+logger.error('Error message')
 ```
 
-### 2. Use infoLogs
+### Session-Based Logging:
+
+1. Retrieve session ID from your request:
+
+```ts
+const sessionId = (req: Request, res: Response) =>  req.headers['request-id'] as string || ''
+chira.setSessionId(sessionId)
+```
+
+### Advanced Configuration
+
+Refer to the API reference for details on customizing logging levels, file paths, and rotation settings.
 
 ```ts
 import Chira, { Configuration } from 'chira'
@@ -92,18 +101,7 @@ app.use('/', (req, res) => {
 app.listen(3000, () => loggerNoSession.info('app started on PORT: 3000'))
 ```
 
-result (appLog)
-```ts
-{"LogType":"App","Host":"","Session":"","AppName":"PROJECT_NAME","Instance":"0","InputTimeStamp":"","Level":"info","Message":"app started on PORT: 3000"}
-{"LogType":"App","Host":"","Session":"","AppName":"PROJECT_NAME","Instance":"0","InputTimeStamp":"","Level":"debug","Message":"got request from client."}
-```
-
-result after response (infoLog)
-```ts
-{"LogType":"Info","Session":"request-id-01","Host":"","AppName":"middleware","Instance":"0","InputTimeStamp":"20240223 12:24:21.288","Request":{"Type":"INCOMING","Method":"POST","Url":"/","Headers":{"host":"127.0.0.1:49441","accept-encoding":"gzip, deflate","request-id":"request-id-01","content-type":"application/json","content-length":"17","connection":"close"},"Body":{"msg":"hello 4"}},"Response":{"Type":"OUTGOING","StatusCode":200,"Headers":{"x-powered-by":"Express","content-type":"text/html; charset=utf-8","content-length":"2","etag":"W/\"2-eoX0dku9ba8cNUXvu/DyeabcC+s\""},"Body":"ok","ProcessApp":74},"ResTime":75}
-```
-
-## Example for use in project
+## Example Integration
 
 1. create `logger.ts` file
 
@@ -202,3 +200,8 @@ export function getAdmin(req: CustomRequestType, res: Response) {
   res.json({})
 }
 ```
+
+### API Reference
+- `new Chira().init(config?, app?: Express): Chira` - Creates a Chira instance and initializes it with configuration and optionally an Express app.
+- `getLogger(sessionId?: string): ChiraLogger` - Retrieves a logger instance with the specified session ID (optional).
+- `setSessionId(callback: (req: Request, res: Response))` - Set the session ID
