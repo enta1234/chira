@@ -5,7 +5,7 @@ import { mkdirp } from 'mkdirp'
 import onHeaders from 'on-headers'
 import onFinished from 'on-finished'
 import dateFormat from 'dateformat'
-import cron from 'node-cron'
+// import cron from 'node-cron'
 import express from 'express'
 import { AxiosResponse } from 'axios'
 
@@ -14,19 +14,19 @@ const endOfLine: string = os.EOL
 process.env.pm_id = process.env.pm_id || '0'
 
 const dateFMT: string = 'yyyymmdd HH:MM:ss.l'
-const dateFMT_SQL: string = 'yyyy-mm-dd HH:MM:ss.l'
+// const dateFMT_SQL: string = 'yyyy-mm-dd HH:MM:ss.l'
 const fileFMT: string = 'yyyymmddHHMMss'
 
-const cTypeTXT: string[] = [
-  'text/plain',
-  'application/json',
-  'text/xml',
-  'text/html',
-  'application/xml',
-  'application/javascript',
-  'text/css',
-  'text/csv',
-]
+// const cTypeTXT: string[] = [
+//   'text/plain',
+//   'application/json',
+//   'text/xml',
+//   'text/html',
+//   'application/xml',
+//   'application/javascript',
+//   'text/css',
+//   'text/csv',
+// ]
 
 interface AppLogConfiguration {
   time: number // m
@@ -45,7 +45,15 @@ interface InfoLogConfiguration {
   file: boolean
 }
 
-type ConfigurationType = AppLogConfiguration | InfoLogConfiguration
+interface ServiceLogConfiguration {
+  time: number // m
+  size: number | null // K
+  path: string
+  console: boolean
+  file: boolean
+}
+
+type ConfigurationType = AppLogConfiguration | InfoLogConfiguration | ServiceLogConfiguration
 
 type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>
 
@@ -59,7 +67,7 @@ export interface Configuration {
   projectName: string
   log: AppLogConfiguration
   info?: InfoLogConfiguration
-  // summary: SummaryConfiguration
+  service?: ServiceLogConfiguration
 }
 
 let conf: Configuration = {
@@ -137,11 +145,12 @@ type RawInfoRes = {
 
 interface RawServiceMessage {
   LOG_TYPE: string
+  SESSION_ID: string
+  NODE_ENDPOINT: string
   HOST: string
   APP_NAME: string
   INSTANCE: string
   INPUT_TIMESTAMP: string | null
-  SESSION_ID: string
   REQUEST_METHOD: string
   REQUEST_URI: string
   REQUEST_HEADERS: any
@@ -172,8 +181,10 @@ type RawServiceRes = {
 
 export interface ServiceMessage {
   sid: string
-  nodeName: string,
+  nodeName: string
   response: AxiosResponse
+  processTime: number | null
+  responseTime: number | null
 }
 
 interface StreamTask {
@@ -197,7 +208,7 @@ class Chira {
     this.streamTask = {
       app: [],
       info: [],
-      // dtl: []
+      service: []
     }
   }
 
@@ -215,6 +226,7 @@ class Chira {
   private getConf(type: string): ConfigurationType {
     if (type === 'app') return conf.log
     if (type === 'info' && conf.info) return conf.info
+    if (type === 'service' && conf.service) return conf.service
     return conf.log
   }
 
@@ -304,6 +316,29 @@ class Chira {
     return JSON.stringify(rawMsg)
   }
 
+  private processServiceLog(serviceMessage: ServiceMessage): string {
+    const rawMsg: RawServiceMessage = {
+      LOG_TYPE: 'Service',
+      SESSION_ID: serviceMessage.sid || '',
+      NODE_ENDPOINT: serviceMessage.nodeName,
+      HOST: os.hostname(),
+      APP_NAME: conf.projectName,
+      INSTANCE: process.env.pm_id || '0',
+      INPUT_TIMESTAMP: this.getDateTimeLogFormat(new Date()),
+      REQUEST_METHOD: serviceMessage.response.config.method || '',
+      REQUEST_URI: serviceMessage.response.config.url || '',
+      REQUEST_HEADERS: serviceMessage.response.config.headers,
+      REQUEST_BODY: serviceMessage.response.config.data,
+      RESPONSE_CODE: serviceMessage.response.status,
+      RESPONSE_HEADERS: serviceMessage.response.headers,
+      RESPONSE_BODY: serviceMessage.response.data,
+      RESPONSE_PROCESS: serviceMessage.processTime || 0,
+      RES_TIME: serviceMessage.responseTime || 0,
+    }
+
+    return JSON.stringify(rawMsg)
+  }
+
   private getDateTimeLogFormat(date: Date): string {
     return dateFormat(date, dateFMT)
   }
@@ -355,10 +390,10 @@ class Chira {
   // ============ [END] write infoLog ============
 
   // ============ [START] write serverLog ============
-  private serverLog(sid: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): void {
-    const str = this.processInfoLog(sid, reqLog, resLog, resTime)
-    if (conf.info?.console) console.info(str)
-    if (conf.info?.file) this.writeLog('info', str)
+  private serverLog(serviceMessage: ServiceMessage): void {
+    const str = this.processServiceLog(serviceMessage)
+    if (conf.service?.console) console.info(str)
+    if (conf.service?.file) this.writeLog('service', str)
   }
   // ============ [END] write serverLog ============
 
@@ -412,13 +447,9 @@ class Chira {
   }
 
   public getServiceLogger() {
-    return this.serviceLogger
-  }
-
-  private serviceLogger(serviceMessage: ServiceMessage) {
-    // const objServiceLog: RawServiceMessage = {
-
-    // }
+    return {
+      serviceLogger : (serviceMessage: ServiceMessage) => this.serverLog(serviceMessage)
+    }
   }
 
   private initializeLogger() {
@@ -439,6 +470,15 @@ class Chira {
         this.streamTask.info.push(this.createStream('info'))
       }
       if (conf.info.console) this.streamTask.info.push(console)
+    }
+    if (conf.service) {
+      if (conf.service.file) {
+        if (!fs.existsSync(conf.service.path)) {
+          mkdirp.sync(conf.service.path)
+        }
+        this.streamTask.service.push(this.createStream('service'))
+      }
+      if (conf.service.console) this.streamTask.service.push(console)
     }
   }
 

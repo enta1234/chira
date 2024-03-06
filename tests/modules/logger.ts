@@ -19,6 +19,13 @@ const config: Configuration = {
     path: './logs/middleware/infoLogs',
     console: true,
     file: true
+  },
+  service: {
+    time: 1,
+    size: 5,
+    path: './logs/middleware/serviceLogs',
+    console: true,
+    file: true
   }
 }
 
