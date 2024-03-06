@@ -1,8 +1,9 @@
 import Chira, { Configuration } from '../../index'
 import { Express, Request, Response } from 'express'
+import axios from 'axios'
 
 let chira: Chira
-const tempConfig: Configuration = {
+const config: Configuration = {
   projectName: 'middleware',
   log: {
     time: 1,
@@ -22,7 +23,7 @@ const tempConfig: Configuration = {
 }
 
 function initLog(app: Express) {
-  chira = new Chira().init(tempConfig, app)
+  chira = new Chira().init(config, app)
   const sessionId = (req: Request, res: Response) => req.headers['request-id'] ? req.headers['request-id'] as string : 'request-id'
   chira.setSessionId(sessionId)
 }

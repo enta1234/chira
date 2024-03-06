@@ -7,13 +7,14 @@ import onFinished from 'on-finished'
 import dateFormat from 'dateformat'
 import cron from 'node-cron'
 import express from 'express'
+import { AxiosResponse } from 'axios'
 
 const endOfLine: string = os.EOL
 
 process.env.pm_id = process.env.pm_id || '0'
 
 const dateFMT: string = 'yyyymmdd HH:MM:ss.l'
-const dateFMTSQL: string = 'yyyy-mm-dd HH:MM:ss.l'
+const dateFMT_SQL: string = 'yyyy-mm-dd HH:MM:ss.l'
 const fileFMT: string = 'yyyymmddHHMMss'
 
 const cTypeTXT: string[] = [
@@ -81,28 +82,34 @@ let conf: Configuration = {
 }
 
 interface RawAppMessage {
-  LogType: string
-  Host: string
-  AppName: string
-  Instance: string
-  InputTimeStamp: string | null
-  Level: string
-  Session?: string
-  Message: string
-  Stack?: string
+  LOG_TYPE: string
+  HOST: string
+  APP_NAME: string
+  INSTANCE: string
+  INPUT_TIMESTAMP: string | null
+  LEVEL: string
+  SESSION_ID: string
+  MESSAGE: string
+  STACK?: string
 }
 
 interface RawInfoMessage {
-  LogType: string
-  Host: string
-  AppName: string
-  Instance: string
-  InputTimeStamp: string | null
-  Session?: string
-  Request: RawInfoReq
-  Response: RawInfoRes
-  Stack?: string
-  ResTime: number
+  LOG_TYPE: string
+  HOST: string
+  APP_NAME: string
+  INSTANCE: string
+  INPUT_TIMESTAMP: string | null
+  SESSION_ID: string
+  REQUEST_METHOD: string
+  REQUEST_URI: string
+  REQUEST_HEADERS: any
+  REQUEST_BODY: any
+  RESPONSE_CODE: number
+  RESPONSE_HEADERS: any
+  RESPONSE_BODY: any
+  RESPONSE_PROCESS: number
+  STACK?: string
+  RES_TIME: number
 }
 
 export type Logger = {
@@ -113,6 +120,41 @@ export type Logger = {
 }
 
 type RawInfoReq = {
+  type: string
+  method: string
+  uri: string
+  headers: any
+  body: any
+}
+
+type RawInfoRes = {
+  type: string
+  statusCode: number
+  headers: any
+  body: any
+  processApp: number
+}
+
+interface RawServiceMessage {
+  LOG_TYPE: string
+  HOST: string
+  APP_NAME: string
+  INSTANCE: string
+  INPUT_TIMESTAMP: string | null
+  SESSION_ID: string
+  REQUEST_METHOD: string
+  REQUEST_URI: string
+  REQUEST_HEADERS: any
+  REQUEST_BODY: any
+  RESPONSE_CODE: number
+  RESPONSE_HEADERS: any
+  RESPONSE_BODY: any
+  RESPONSE_PROCESS: number
+  STACK?: string
+  RES_TIME: number
+}
+
+type RawServiceReq = {
   Type: string
   Method: string
   Url: string
@@ -120,12 +162,18 @@ type RawInfoReq = {
   Body: any
 }
 
-type RawInfoRes = {
+type RawServiceRes = {
   Type: string
   StatusCode: number
   Headers: any
   Body: any
   ProcessApp: number
+}
+
+export interface ServiceMessage {
+  sid: string
+  nodeName: string,
+  response: AxiosResponse
 }
 
 interface StreamTask {
@@ -196,35 +244,25 @@ class Chira {
     return stream
   }
 
-  // private toStr(txt: any): string {
-  //   if (txt instanceof Error) {
-  //     return txt.message + ', ' + txt.stack
-  //   } else if (txt instanceof Object) {
-  //     return JSON.stringify(txt)
-  //   } else {
-  //     return txt
-  //   }
-  // }
-
-  private printTxtJSON(rawMsg: any, _txt: any): void {
+  private printTxtJSON(rawMsg: RawAppMessage, _txt: any): void {
     if (_txt instanceof Error) {
-      rawMsg.Message = _txt.message
-      rawMsg.Stack = _txt.stack
+      rawMsg.MESSAGE = _txt.message
+      rawMsg.STACK = _txt.stack
     } else {
-      rawMsg.Message = _txt
+      rawMsg.MESSAGE = _txt
     }
   }
 
   private processAppLog(lvlAppLog: string, ..._txt: any[]): string {
     const rawMsg: RawAppMessage = {
-      LogType: 'App',
-      Host: os.hostname(),
-      Session: '',
-      AppName: conf.projectName,
-      Instance: process.env.pm_id || '0',
-      InputTimeStamp: this.getDateTimeLogFormat(new Date()),
-      Level: lvlAppLog,
-      Message: ''
+      LOG_TYPE: 'App',
+      SESSION_ID: '',
+      HOST: os.hostname(),
+      APP_NAME: conf.projectName,
+      INSTANCE: process.env.pm_id || '0',
+      INPUT_TIMESTAMP: this.getDateTimeLogFormat(new Date()),
+      LEVEL: lvlAppLog,
+      MESSAGE: ''
     }
 
     let session
@@ -240,21 +278,27 @@ class Chira {
       session = ''
       this.printTxtJSON(rawMsg, _txt)
     }
-    rawMsg.Session = session
+    rawMsg.SESSION_ID = session
     return JSON.stringify(rawMsg)
   }
 
   private processInfoLog(session: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): string {
     const rawMsg: RawInfoMessage = {
-      LogType: 'Info',
-      Session: session || '',
-      Host: os.hostname(),
-      AppName: conf.projectName,
-      Instance: process.env.pm_id || '0',
-      InputTimeStamp: this.getDateTimeLogFormat(new Date()),
-      Request: reqLog,
-      Response: resLog,
-      ResTime: resTime
+      LOG_TYPE: 'Info',
+      SESSION_ID: session || '',
+      HOST: os.hostname(),
+      APP_NAME: conf.projectName,
+      INSTANCE: process.env.pm_id || '0',
+      INPUT_TIMESTAMP: this.getDateTimeLogFormat(new Date()),
+      REQUEST_METHOD: reqLog.method,
+      REQUEST_URI: reqLog.uri,
+      REQUEST_HEADERS: reqLog.headers,
+      REQUEST_BODY: reqLog.body,
+      RESPONSE_CODE: resLog.statusCode,
+      RESPONSE_HEADERS: resLog.headers,
+      RESPONSE_BODY: resLog.body,
+      RESPONSE_PROCESS: resLog.processApp,
+      RES_TIME: resTime
     }
 
     return JSON.stringify(rawMsg)
@@ -310,6 +354,14 @@ class Chira {
   }
   // ============ [END] write infoLog ============
 
+  // ============ [START] write serverLog ============
+  private serverLog(sid: string, reqLog: RawInfoReq, resLog: RawInfoRes, resTime: number): void {
+    const str = this.processInfoLog(sid, reqLog, resLog, resTime)
+    if (conf.info?.console) console.info(str)
+    if (conf.info?.file) this.writeLog('info', str)
+  }
+  // ============ [END] write serverLog ============
+
   public ready(): boolean {
     return this.logStream !== null
   }
@@ -359,6 +411,16 @@ class Chira {
     return logs
   }
 
+  public getServiceLogger() {
+    return this.serviceLogger
+  }
+
+  private serviceLogger(serviceMessage: ServiceMessage) {
+    // const objServiceLog: RawServiceMessage = {
+
+    // }
+  }
+
   private initializeLogger() {
     if (conf.log) {
       if (conf.log.file) {
@@ -400,11 +462,11 @@ class Chira {
       const sid = this.sessionIdProvider?.(req, res)
       req.sessionId = sid || ''
       const txtLogReq: RawInfoReq = {
-        Type: 'INCOMING',
-        Method: req.method,
-        Url: req.url,
-        Headers: req.headers,
-        Body: req.body ? req.body : null,
+        type: 'INCOMING',
+        method: req.method,
+        uri: req.url,
+        headers: req.headers,
+        body: req.body ? req.body : null,
       }
 
       onHeaders(res, () => {
@@ -415,11 +477,11 @@ class Chira {
       onFinished(res, (err: any, _res: express.Response) => {
         if (!req._reqTimeForLog) req._reqTimeForLog = Date.now()
         let txtLogRes: RawInfoRes = {
-          Type: 'OUTGOING',
-          StatusCode: _res.statusCode,
-          Headers: _res.getHeaders(),
-          Body: _res.body,
-          ProcessApp: _res._processAPP
+          type: 'OUTGOING',
+          statusCode: _res.statusCode,
+          headers: _res.getHeaders(),
+          body: _res.body,
+          processApp: _res._processAPP
         }
         const resTime = Date.now() - req._reqTimeForLog
         this.infoLog(sid || '', txtLogReq, txtLogRes, resTime)
