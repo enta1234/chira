@@ -447,17 +447,19 @@ class Chira {
           chunks.push(Buffer.from(restArgs[0]))
         }
 
-        let cType = res.getHeaders()['content-type'] as string
+        let cType = res.getHeaders()['content-type'] as string | undefined
         let type = ''
 
-        if (cType.includes(';')) {
-          cType = cType.split(';')[0]
-        }
+        if (cType) {
+          if (cType.includes(';')) {
+            cType = cType.split(';')[0]
+          }
 
-        if (cType === 'application/json') {
-          type = 'json'
-        } else {
-          type = 'txt'
+          if (cType === 'application/json') {
+            type = 'json'
+          } else if (cTypeTXT.includes(cType)) {
+            type = 'txt'
+          }
         }
 
         if (type) {
